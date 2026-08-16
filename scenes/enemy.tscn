@@ -1,16 +1,16 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemy.gd" id="1"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_1"]
 radius = 0.45
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_body"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_blob_body"]
 albedo_color = Color(0.22, 0.04, 0.05, 1)
 roughness = 0.8
 
-[sub_resource type="SphereMesh" id="SphereMesh_body"]
-material = SubResource("StandardMaterial3D_body")
+[sub_resource type="SphereMesh" id="SphereMesh_blob_body"]
+material = SubResource("StandardMaterial3D_blob_body")
 radius = 0.45
 height = 0.9
 
@@ -24,6 +24,46 @@ top_radius = 0.0
 bottom_radius = 0.1
 height = 0.35
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_quad_body"]
+albedo_color = Color(0.3, 0.1, 0.1, 1)
+roughness = 0.75
+
+[sub_resource type="BoxMesh" id="BoxMesh_quad_torso"]
+material = SubResource("StandardMaterial3D_quad_body")
+size = Vector3(0.26, 0.22, 0.5)
+
+[sub_resource type="BoxMesh" id="BoxMesh_quad_head"]
+material = SubResource("StandardMaterial3D_quad_body")
+size = Vector3(0.2, 0.2, 0.22)
+
+[sub_resource type="BoxMesh" id="BoxMesh_quad_tail"]
+material = SubResource("StandardMaterial3D_quad_body")
+size = Vector3(0.08, 0.08, 0.3)
+
+[sub_resource type="BoxMesh" id="BoxMesh_quad_leg"]
+material = SubResource("StandardMaterial3D_quad_body")
+size = Vector3(0.1, 0.24, 0.1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_hum_body"]
+albedo_color = Color(0.3, 0.1, 0.1, 1)
+roughness = 0.75
+
+[sub_resource type="BoxMesh" id="BoxMesh_hum_head"]
+material = SubResource("StandardMaterial3D_hum_body")
+size = Vector3(0.3, 0.3, 0.3)
+
+[sub_resource type="BoxMesh" id="BoxMesh_hum_torso"]
+material = SubResource("StandardMaterial3D_hum_body")
+size = Vector3(0.38, 0.42, 0.22)
+
+[sub_resource type="BoxMesh" id="BoxMesh_hum_arm"]
+material = SubResource("StandardMaterial3D_hum_body")
+size = Vector3(0.14, 0.34, 0.14)
+
+[sub_resource type="BoxMesh" id="BoxMesh_hum_leg"]
+material = SubResource("StandardMaterial3D_hum_body")
+size = Vector3(0.16, 0.36, 0.16)
+
 [node name="Enemy" type="CharacterBody3D"]
 collision_layer = 8
 collision_mask = 14
@@ -36,21 +76,104 @@ shape = SubResource("SphereShape3D_1")
 
 [node name="Visuals" type="Node3D" parent="."]
 
-[node name="Body" type="MeshInstance3D" parent="Visuals"]
+[node name="BlobBody" type="Node3D" parent="Visuals"]
+
+[node name="Body" type="MeshInstance3D" parent="Visuals/BlobBody"]
 position = Vector3(0, 0.45, 0)
 scale = Vector3(1, 0.9, 1)
-mesh = SubResource("SphereMesh_body")
+mesh = SubResource("SphereMesh_blob_body")
 
-[node name="Spike1" type="MeshInstance3D" parent="Visuals"]
+[node name="Spike1" type="MeshInstance3D" parent="Visuals/BlobBody"]
 position = Vector3(0, 0.82, 0)
 mesh = SubResource("CylinderMesh_spike")
 
-[node name="Spike2" type="MeshInstance3D" parent="Visuals"]
+[node name="Spike2" type="MeshInstance3D" parent="Visuals/BlobBody"]
 position = Vector3(0.22, 0.62, 0.15)
 rotation_degrees = Vector3(0, 0, -35)
 mesh = SubResource("CylinderMesh_spike")
 
-[node name="Spike3" type="MeshInstance3D" parent="Visuals"]
+[node name="Spike3" type="MeshInstance3D" parent="Visuals/BlobBody"]
 position = Vector3(-0.15, 0.62, -0.22)
 rotation_degrees = Vector3(20, 0, 25)
 mesh = SubResource("CylinderMesh_spike")
+
+[node name="QuadrupedBody" type="Node3D" parent="Visuals"]
+
+[node name="Torso" type="MeshInstance3D" parent="Visuals/QuadrupedBody"]
+position = Vector3(0, 0.35, 0)
+mesh = SubResource("BoxMesh_quad_torso")
+
+[node name="Head" type="MeshInstance3D" parent="Visuals/QuadrupedBody"]
+position = Vector3(0, 0.4, -0.32)
+mesh = SubResource("BoxMesh_quad_head")
+
+[node name="Tail" type="MeshInstance3D" parent="Visuals/QuadrupedBody"]
+position = Vector3(0, 0.44, 0.35)
+rotation_degrees = Vector3(-25, 0, 0)
+mesh = SubResource("BoxMesh_quad_tail")
+
+[node name="FrontLeftLegPivot" type="Node3D" parent="Visuals/QuadrupedBody"]
+position = Vector3(-0.11, 0.24, -0.2)
+
+[node name="FrontLeftLeg" type="MeshInstance3D" parent="Visuals/QuadrupedBody/FrontLeftLegPivot"]
+position = Vector3(0, -0.12, 0)
+mesh = SubResource("BoxMesh_quad_leg")
+
+[node name="FrontRightLegPivot" type="Node3D" parent="Visuals/QuadrupedBody"]
+position = Vector3(0.11, 0.24, -0.2)
+
+[node name="FrontRightLeg" type="MeshInstance3D" parent="Visuals/QuadrupedBody/FrontRightLegPivot"]
+position = Vector3(0, -0.12, 0)
+mesh = SubResource("BoxMesh_quad_leg")
+
+[node name="BackLeftLegPivot" type="Node3D" parent="Visuals/QuadrupedBody"]
+position = Vector3(-0.11, 0.24, 0.2)
+
+[node name="BackLeftLeg" type="MeshInstance3D" parent="Visuals/QuadrupedBody/BackLeftLegPivot"]
+position = Vector3(0, -0.12, 0)
+mesh = SubResource("BoxMesh_quad_leg")
+
+[node name="BackRightLegPivot" type="Node3D" parent="Visuals/QuadrupedBody"]
+position = Vector3(0.11, 0.24, 0.2)
+
+[node name="BackRightLeg" type="MeshInstance3D" parent="Visuals/QuadrupedBody/BackRightLegPivot"]
+position = Vector3(0, -0.12, 0)
+mesh = SubResource("BoxMesh_quad_leg")
+
+[node name="HumanoidBody" type="Node3D" parent="Visuals"]
+
+[node name="Torso" type="MeshInstance3D" parent="Visuals/HumanoidBody"]
+position = Vector3(0, 0.57, 0)
+mesh = SubResource("BoxMesh_hum_torso")
+
+[node name="Head" type="MeshInstance3D" parent="Visuals/HumanoidBody"]
+position = Vector3(0, 0.93, 0)
+mesh = SubResource("BoxMesh_hum_head")
+
+[node name="LeftArmPivot" type="Node3D" parent="Visuals/HumanoidBody"]
+position = Vector3(-0.26, 0.78, 0)
+
+[node name="LeftArm" type="MeshInstance3D" parent="Visuals/HumanoidBody/LeftArmPivot"]
+position = Vector3(0, -0.17, 0)
+mesh = SubResource("BoxMesh_hum_arm")
+
+[node name="RightArmPivot" type="Node3D" parent="Visuals/HumanoidBody"]
+position = Vector3(0.26, 0.78, 0)
+
+[node name="RightArm" type="MeshInstance3D" parent="Visuals/HumanoidBody/RightArmPivot"]
+position = Vector3(0, -0.17, 0)
+mesh = SubResource("BoxMesh_hum_arm")
+
+[node name="LeftLegPivot" type="Node3D" parent="Visuals/HumanoidBody"]
+position = Vector3(-0.1, 0.36, 0)
+
+[node name="LeftLeg" type="MeshInstance3D" parent="Visuals/HumanoidBody/LeftLegPivot"]
+position = Vector3(0, -0.18, 0)
+mesh = SubResource("BoxMesh_hum_leg")
+
+[node name="RightLegPivot" type="Node3D" parent="Visuals/HumanoidBody"]
+position = Vector3(0.1, 0.36, 0)
+
+[node name="RightLeg" type="MeshInstance3D" parent="Visuals/HumanoidBody/RightLegPivot"]
+position = Vector3(0, -0.18, 0)
+mesh = SubResource("BoxMesh_hum_leg")
