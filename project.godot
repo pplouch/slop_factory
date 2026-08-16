@@ -21,12 +21,12 @@ config/icon="res://icon.svg"
 
 [autoload]
 
-GameManager="*res://scripts/game_manager.gd"
-Effects="*res://scripts/effects.gd"
-BlobKinds="*res://scripts/blob_kinds.gd"
-BuildingKinds="*res://scripts/building_kinds.gd"
-EnemyKinds="*res://scripts/enemy_kinds.gd"
-Biomes="*res://scripts/biomes.gd"
+GameManager="*res://scripts/autoload/game_manager.gd"
+Effects="*res://scripts/autoload/effects.gd"
+BlobKinds="*res://scripts/autoload/blob_kinds.gd"
+BuildingKinds="*res://scripts/autoload/building_kinds.gd"
+EnemyKinds="*res://scripts/autoload/enemy_kinds.gd"
+Biomes="*res://scripts/autoload/biomes.gd"
 
 [display]
 

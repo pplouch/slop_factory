@@ -1,0 +1,52 @@
+[gd_scene load_steps=13 format=3 uid="uid://kw8ovq1qk74x"]
+
+[ext_resource type="Script" path="res://scripts/world/world.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/world/camera_rig.gd" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/ui/building_menu.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://scenes/ui/build_palette.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://scenes/ui/debug_menu.tscn" id="7"]
+[ext_resource type="PackedScene" path="res://scenes/ui/unit_info_panel.tscn" id="8"]
+[ext_resource type="PackedScene" path="res://scenes/ui/minimap.tscn" id="9"]
+[ext_resource type="PackedScene" path="res://scenes/ui/resource_info_panel.tscn" id="10"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("ProceduralSkyMaterial_1")
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+
+[node name="World" type="Node3D"]
+script = ExtResource("1")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-50, -30, 0)
+shadow_enabled = true
+
+[node name="CameraRig" type="Node3D" parent="."]
+script = ExtResource("2")
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+position = Vector3(0, 16, 12)
+rotation_degrees = Vector3(-53, 0, 0)
+current = true
+
+[node name="HUD" parent="." instance=ExtResource("4")]
+
+[node name="BuildingMenu" parent="." instance=ExtResource("5")]
+
+[node name="BuildPalette" parent="." instance=ExtResource("6")]
+
+[node name="DebugMenu" parent="." instance=ExtResource("7")]
+
+[node name="UnitInfoPanel" parent="." instance=ExtResource("8")]
+
+[node name="Minimap" parent="." instance=ExtResource("9")]
+
+[node name="ResourceInfoPanel" parent="." instance=ExtResource("10")]

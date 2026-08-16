@@ -1,0 +1,45 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_objects/resource_node.gd" id="1"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_1"]
+radius = 0.3
+height = 1.6
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_body"]
+albedo_color = Color(0.28, 0.5, 0.3, 1)
+roughness = 0.85
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_body"]
+material = SubResource("StandardMaterial3D_body")
+top_radius = 0.22
+bottom_radius = 0.28
+height = 1.5
+
+[node name="Cactus" type="StaticBody3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+resource_type = "cactus_fiber"
+max_amount = 35
+respawn_time = 50.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.8, 0)
+shape = SubResource("CylinderShape3D_1")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.75, 0)
+mesh = SubResource("CylinderMesh_body")
+
+[node name="ArmLeft" type="MeshInstance3D" parent="."]
+position = Vector3(-0.32, 0.9, 0)
+rotation_degrees = Vector3(0, 0, 25)
+scale = Vector3(0.55, 0.55, 0.55)
+mesh = SubResource("CylinderMesh_body")
+
+[node name="ArmRight" type="MeshInstance3D" parent="."]
+position = Vector3(0.3, 1.1, 0)
+rotation_degrees = Vector3(0, 0, -20)
+scale = Vector3(0.5, 0.5, 0.5)
+mesh = SubResource("CylinderMesh_body")

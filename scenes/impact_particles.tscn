@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3]
-
-[ext_resource type="Script" path="res://scripts/impact_particles.gd" id="1"]
-
-[node name="ImpactParticles" type="GPUParticles3D"]
-script = ExtResource("1")
