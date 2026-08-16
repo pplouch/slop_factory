@@ -21,6 +21,7 @@ extends CanvasLayer
 @onready var vbox: VBoxContainer = $Panel/Scroll/VBox
 @onready var this_building_section: VBoxContainer = $Panel/Scroll/VBox/ThisBuildingSection
 @onready var name_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/NameLabel
+@onready var construction_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/ConstructionLabel
 @onready var durability_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/DurabilityLabel
 @onready var ports_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/PortsLabel
 @onready var info_extra_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/InfoExtraLabel
@@ -83,7 +84,8 @@ func _on_backdrop_gui_input(event: InputEvent) -> void:
 ## actually has that capability.
 func open_menu(building: Node) -> void:
 	_current_building = building
-	var is_town_hall_like: bool = building.has_method("hire_blob")
+	var under_construction: bool = "is_under_construction" in building and building.is_under_construction
+	var is_town_hall_like: bool = building.has_method("hire_blob") and not under_construction
 	global_upgrades_section.visible = is_town_hall_like
 	hire_section.visible = is_town_hall_like
 	unlock_section.visible = is_town_hall_like
@@ -246,13 +248,24 @@ func _refresh_this_building() -> void:
 
 	name_label.text = display_name
 
-	if "durability" in building and "max_durability" in building:
+	var under_construction: bool = "is_under_construction" in building and building.is_under_construction
+	if under_construction:
+		var required: float = building_kind.build_labor if building_kind else 1.0
+		var pct: int = int(round(clamp(building.construction_progress / max(required, 0.001), 0.0, 1.0) * 100.0))
+		construction_label.text = "Under Construction: %d%%\nSend blobs here (right-click while selected) to help build it." % pct
+		construction_label.visible = true
+	else:
+		construction_label.visible = false
+
+	# Every other section is meaningless (and hidden) while still under
+	# construction -- there's nothing to upgrade/deliver to/hire from yet.
+	if "durability" in building and "max_durability" in building and not under_construction:
 		durability_label.text = "Durability: %d / %d" % [building.durability, building.max_durability]
 		durability_label.visible = true
 	else:
 		durability_label.visible = false
 
-	if building_kind:
+	if building_kind and not under_construction:
 		var input_desc: String = "none" if building_kind.input_ports.is_empty() else str(building_kind.input_ports.size())
 		var output_desc: String = "none" if building_kind.output_ports.is_empty() else str(building_kind.output_ports.size())
 		ports_label.text = "Inputs: %s   Outputs: %s" % [input_desc, output_desc]
@@ -260,13 +273,13 @@ func _refresh_this_building() -> void:
 	else:
 		ports_label.visible = false
 
-	if building.has_method("get_info_text"):
+	if building.has_method("get_info_text") and not under_construction:
 		info_extra_label.text = building.get_info_text()
 		info_extra_label.visible = true
 	else:
 		info_extra_label.visible = false
 
-	var has_instance_upgrades: bool = "upgrade_level" in building and building_kind and not building_kind.upgrade_costs.is_empty()
+	var has_instance_upgrades: bool = "upgrade_level" in building and building_kind and not building_kind.upgrade_costs.is_empty() and not under_construction
 	this_building_section.get_node("UpgradeRow").visible = has_instance_upgrades
 	perk_label.visible = has_instance_upgrades
 	if has_instance_upgrades:

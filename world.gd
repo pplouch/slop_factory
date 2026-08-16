@@ -672,7 +672,12 @@ func _handle_right_click(pos: Vector2) -> void:
 			blob.command_patrol(hit.position, patrol_tolerance)
 		Effects.spawn_command_marker(self, hit.position + Vector3(0.0, 0.05, 0.0), COLOR_PATROL)
 		return
-	if hit.collider.is_in_group("resource_nodes"):
+	var building_owner := _find_building_owner(hit.collider)
+	var is_under_construction: bool = building_owner != null and "is_under_construction" in building_owner and building_owner.is_under_construction
+	if is_under_construction:
+		_issue_build_orders(building_owner)
+		Effects.spawn_command_marker(self, building_owner.global_position + Vector3(0.0, 0.05, 0.0), COLOR_HARVEST)
+	elif hit.collider.is_in_group("resource_nodes"):
 		_issue_harvest_orders(hit.collider)
 		Effects.spawn_command_marker(self, hit.collider.global_position + Vector3(0.0, 0.05, 0.0), COLOR_HARVEST)
 	else:
@@ -733,6 +738,16 @@ func _issue_harvest_orders(clicked_node: Node) -> void:
 			assigned_count[best_node] = slot + 1
 			var angle := (TAU / MAX_BLOBS_PER_NODE) * slot
 			blob.command_harvest(best_node, angle)
+
+## Sends every currently-selected blob to help construct `building` (an
+## under-construction Town Hall/Storage Depot), each with its own evenly-
+## spaced approach angle around it -- the same "don't all aim for the same
+## spot" trick _issue_harvest_orders uses for resource nodes -- so a squad
+## sent to build doesn't jam each other trying to stand in the same place.
+func _issue_build_orders(building: Node) -> void:
+	for i in selected_blobs.size():
+		var angle := (TAU / selected_blobs.size()) * i
+		selected_blobs[i].command_build(building, angle)
 
 ## Adds `blob` to the current selection (no-op if already selected) and
 ## turns on its selection ring.

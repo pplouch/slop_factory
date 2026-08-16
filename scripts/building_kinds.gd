@@ -34,10 +34,15 @@ class Kind:
 	## level actually does -- the building script itself reads its own
 	## upgrade_level to apply the numeric effect described here.
 	var upgrade_perks: Array
+	## Total seconds of blob labor (see Blob.build_rate) a freshly-placed
+	## instance needs before it finishes construction and becomes usable --
+	## see Building/StorageDepot's add_construction_progress.
+	var build_labor: float
 
 	func _init(p_id: String, p_name: String, p_scene_path: String, p_build_cost: int,
 			p_input_ports: Array, p_output_ports: Array, p_unlock_cost: int, p_requires: String,
-			p_max_durability: int, p_upgrade_costs: Array, p_upgrade_perks: Array) -> void:
+			p_max_durability: int, p_upgrade_costs: Array, p_upgrade_perks: Array,
+			p_build_labor: float = 20.0) -> void:
 		id = p_id
 		display_name = p_name
 		scene = load(p_scene_path)
@@ -49,6 +54,7 @@ class Kind:
 		max_durability = p_max_durability
 		upgrade_costs = p_upgrade_costs
 		upgrade_perks = p_upgrade_perks
+		build_labor = p_build_labor
 
 var _kinds: Dictionary = {}
 var _ordered_ids: Array = []
@@ -64,13 +70,15 @@ func _ready() -> void:
 		"town_hall", "Town Hall", "res://scenes/building.tscn", 50,
 		[Vector2i(0, -1), Vector2i(-1, 0)], [], 0, "",
 		150, [40, 80, 140],
-		["Spawn timer 15% faster", "Spawn timer 15% faster again, hire costs -10%", "Free spawns arrive as a random kind instead of always worker"]
+		["Spawn timer 15% faster", "Spawn timer 15% faster again, hire costs -10%", "Free spawns arrive as a random kind instead of always worker"],
+		30.0
 	))
 	_register(Kind.new(
 		"storage_depot", "Storage Depot", "res://scenes/factory/storage_depot.tscn", 40,
 		[Vector2i(0, -1), Vector2i(-1, 0)], [Vector2i(0, 1), Vector2i(1, 0)], 60, "town_hall",
 		100, [35, 70],
-		["Buffer capacity +2", "Buffer capacity +2 again"]
+		["Buffer capacity +2", "Buffer capacity +2 again"],
+		18.0
 	))
 
 ## Adds `kind` to the catalog, preserving registration order for UI display.

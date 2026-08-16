@@ -28,6 +28,9 @@ const BASE_SPEED := 3.2
 const BASE_CARRY_CAPACITY := 10
 const BASE_HARVEST_AMOUNT := 1
 const BASE_HARVEST_INTERVAL := 1.0
+## Labor-points-per-second this blob contributes toward an under-
+## construction building, before its kind's build_mult (see BlobKinds).
+const BASE_BUILD_RATE := 1.0
 const BASE_ATTACK_POWER := 2.0
 const BASE_ATTACK_INTERVAL := 1.0
 const BASE_DEXTERITY := 1.0
@@ -35,6 +38,11 @@ const BASE_MAX_HEALTH := 20.0
 const BASE_HEALTH_REGEN := 0.4
 const ARRIVE_DISTANCE := 0.4
 const APPROACH_RADIUS := 1.15
+## Buildings are bigger than a resource node and boxy rather than round, so
+## a fixed radius that clears a Town Hall/Storage Depot's footprint along
+## its diagonal (half-extent ~1.41 for a 2x2 footprint) needs real margin,
+## not just APPROACH_RADIUS's tight 1.15.
+const BUILD_APPROACH_RADIUS := 2.2
 const ATTACK_RANGE := 1.3
 
 # -- Stall recovery tuning (see _update_stall_detection / _start_detour) --
@@ -65,6 +73,7 @@ var speed: float = BASE_SPEED
 var carry_capacity: int = BASE_CARRY_CAPACITY
 var harvest_amount: int = BASE_HARVEST_AMOUNT
 var harvest_interval: float = BASE_HARVEST_INTERVAL
+var build_rate: float = BASE_BUILD_RATE
 var attack_power: float = BASE_ATTACK_POWER
 var attack_interval: float = BASE_ATTACK_INTERVAL
 
@@ -95,6 +104,9 @@ var final_target: Vector3 = Vector3.ZERO
 var move_tolerance: float = 0.0
 ## The resource node this blob is walking to / currently harvesting, if any.
 var pending_harvest_node: Node = null
+## The under-construction building this blob is walking to / currently
+## helping build, if any (see command_build/ConstructState).
+var pending_build_target: Node = null
 
 ## Remaining grid-cell waypoints (world positions) between here and
 ## final_target, computed by World's pathing grid when the direct line is
@@ -158,6 +170,7 @@ func _refresh_stats() -> void:
 	carry_capacity = max(1, int(round((BASE_CARRY_CAPACITY + GameManager.get_capacity_bonus()) * kind.capacity_mult)))
 	harvest_amount = max(1, int(round(BASE_HARVEST_AMOUNT * GameManager.get_strength_multiplier() * kind.harvest_mult * GameManager.get_starvation_harvest_multiplier())))
 	harvest_interval = BASE_HARVEST_INTERVAL / GameManager.get_efficiency_multiplier()
+	build_rate = BASE_BUILD_RATE * kind.build_mult * GameManager.get_efficiency_multiplier()
 
 	attack_power = BASE_ATTACK_POWER * GameManager.get_strength_multiplier() * kind.harvest_mult
 	attack_interval = BASE_ATTACK_INTERVAL / kind.speed_mult
@@ -219,6 +232,7 @@ func _update_ring() -> void:
 ## a point another blob in the same group already reached first.
 func command_move(target: Vector3, tolerance: float = 0.0) -> void:
 	pending_harvest_node = null
+	pending_build_target = null
 	_set_destination(target)
 	move_tolerance = tolerance
 	_transition_to(MovingState.new())
@@ -230,8 +244,22 @@ func command_move(target: Vector3, tolerance: float = 0.0) -> void:
 ## same spot; omit it to pick a random angle (used for solo orders).
 func command_harvest(node: Node, approach_angle: float = -1.0) -> void:
 	pending_harvest_node = node
+	pending_build_target = null
 	_approach_angle = approach_angle if approach_angle >= 0.0 else randf() * TAU
 	_set_destination(_approach_point(node.global_position, _approach_angle))
+	_transition_to(MovingState.new())
+	_acknowledge_order()
+
+## Player order: walk to (an approach point around) `building` and help
+## construct it until it's finished or a fresh order overrides this one.
+## `approach_angle` mirrors command_harvest -- lets World spread several
+## blobs sent to the same building around it instead of stacking them on
+## one spot; omit it to pick a random angle (used for solo orders).
+func command_build(building: Node, approach_angle: float = -1.0) -> void:
+	pending_harvest_node = null
+	pending_build_target = building
+	_approach_angle = approach_angle if approach_angle >= 0.0 else randf() * TAU
+	_set_destination(_approach_point(building.global_position, _approach_angle, BUILD_APPROACH_RADIUS))
 	_transition_to(MovingState.new())
 	_acknowledge_order()
 
@@ -242,6 +270,7 @@ func command_harvest(node: Node, approach_angle: float = -1.0) -> void:
 ## leave every blob but one stuck circling it forever.
 func command_patrol(point_b: Vector3, tolerance: float = 0.0) -> void:
 	pending_harvest_node = null
+	pending_build_target = null
 	_transition_to(PatrolState.new(global_position, point_b, tolerance))
 	_acknowledge_order()
 
@@ -250,6 +279,7 @@ func command_patrol(point_b: Vector3, tolerance: float = 0.0) -> void:
 ## and returning here once the area's clear (see HoldState).
 func command_hold() -> void:
 	pending_harvest_node = null
+	pending_build_target = null
 	_transition_to(HoldState.new(global_position))
 	_acknowledge_order()
 
@@ -258,6 +288,7 @@ func command_hold() -> void:
 ## overrides it (see ExploreState).
 func command_explore() -> void:
 	pending_harvest_node = null
+	pending_build_target = null
 	_transition_to(ExploreState.new(global_position))
 	_acknowledge_order()
 
@@ -299,11 +330,16 @@ func _advance_along_path() -> void:
 
 ## Picks a point `APPROACH_RADIUS` from `target` at `angle` (plus a small
 ## random jitter so a group of blobs doesn't look perfectly geometric),
-## used as the actual walk-to point for a harvest order -- blobs stand next
-## to a resource node's edge rather than trying to walk into its center.
-func _approach_point(target: Vector3, angle: float) -> Vector3:
+## used as the actual walk-to point for a harvest/build order -- blobs
+## stand next to the target's edge rather than trying to walk into its
+## center. `radius` defaults to APPROACH_RADIUS (sized for a resource
+## node); command_build passes a bigger one since a building's footprint
+## is larger and, unlike a resource node, isn't round -- a fixed radius
+## that clears it along a cardinal direction can still land *inside* it
+## along a diagonal one.
+func _approach_point(target: Vector3, angle: float, radius: float = APPROACH_RADIUS) -> Vector3:
 	var jittered_angle := angle + randf_range(-0.15, 0.15)
-	return target + Vector3(cos(jittered_angle), 0.0, sin(jittered_angle)) * APPROACH_RADIUS
+	return target + Vector3(cos(jittered_angle), 0.0, sin(jittered_angle)) * radius
 
 ## Plays a quick squash-and-recover animation on the body, giving visible
 ## feedback the instant an order is accepted (in addition to the ring

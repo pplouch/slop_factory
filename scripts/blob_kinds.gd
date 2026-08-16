@@ -26,10 +26,16 @@ class Kind:
 	## surfaced by UnitInfoPanel next to the standing-order buttons whenever
 	## a unit (or group) of this kind is selected.
 	var trait_description: String
+	## How much faster/slower than baseline this kind contributes toward an
+	## under-construction building's labor requirement (see Blob.command_build
+	## / Building.add_construction_progress). Every kind can pitch in --
+	## "builder" is just the specialist at it -- so this defaults to a
+	## modest 1.0 for kinds that don't explicitly set it.
+	var build_mult: float
 
 	func _init(p_id: String, p_name: String, p_cost: int, p_speed: float, p_capacity: float,
 			p_harvest: float, p_scale: float, p_hue: float, p_sat: float, p_val: float,
-			p_trait_description: String = "") -> void:
+			p_trait_description: String = "", p_build_mult: float = 1.0) -> void:
 		id = p_id
 		display_name = p_name
 		hire_cost = p_cost
@@ -41,6 +47,7 @@ class Kind:
 		saturation = p_sat
 		value = p_val
 		trait_description = p_trait_description
+		build_mult = p_build_mult
 
 	## Short "Spd 1.6x Cap 0.6x Pwr 0.8x" style summary for hire-menu rows.
 	func stat_summary() -> String:
@@ -64,11 +71,13 @@ func _ready() -> void:
 	_register(Kind.new("worker", "Worker", 15, 1.0, 1.0, 1.0, 1.0, 0.55, 0.45, 0.95,
 		"Balanced all-rounder, good at everything and best at nothing."))
 	_register(Kind.new("scout", "Scout", 20, 1.6, 0.6, 0.8, 0.82, 0.13, 0.65, 0.98,
-		"Fastest mover -- best for Explore/Patrol and covering ground."))
+		"Fastest mover -- best for Explore/Patrol and covering ground.", 0.6))
 	_register(Kind.new("hauler", "Hauler", 25, 0.75, 1.8, 0.9, 1.25, 0.62, 0.5, 0.85,
-		"Biggest carry capacity -- fewer trips per resource run."))
+		"Biggest carry capacity -- fewer trips per resource run.", 0.5))
 	_register(Kind.new("brute", "Brute", 30, 0.85, 1.1, 1.6, 1.2, 0.02, 0.65, 0.9,
-		"Hardest hitter and harvester -- best for Hold sentry duty."))
+		"Hardest hitter and harvester -- best for Hold sentry duty.", 0.8))
+	_register(Kind.new("builder", "Builder", 22, 1.0, 0.8, 0.7, 1.05, 0.11, 0.55, 0.92,
+		"Slower harvester, but constructs buildings far faster than anyone else.", 2.5))
 
 ## Adds `kind` to the catalog, preserving registration order for UI display.
 func _register(kind: Kind) -> void:

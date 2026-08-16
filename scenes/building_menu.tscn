@@ -55,6 +55,13 @@ theme_override_font_sizes/font_size = 22
 text = "Building"
 horizontal_alignment = 1
 
+[node name="ConstructionLabel" type="Label" parent="Panel/Scroll/VBox/ThisBuildingSection"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1.0, 0.85, 0.4, 0.95)
+theme_override_font_sizes/font_size = 13
+text = "Under Construction: 0%"
+horizontal_alignment = 1
+
 [node name="DurabilityLabel" type="Label" parent="Panel/Scroll/VBox/ThisBuildingSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.85, 0.75, 0.9)

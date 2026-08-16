@@ -34,14 +34,27 @@ var upgrade_level := 0
 var durability: int
 var max_durability: int
 
+## Whether this instance is still being built (see add_construction_progress)
+## -- true for every freshly-placed building, since Town Hall/Storage Depot
+## are only ever created via Build Mode, never present at game start.
+## Blocked from spawning/hiring/upgrading/accepting deliveries until done.
+var is_under_construction := true
+var construction_progress := 0.0
+
 @onready var spawn_point: Marker3D = $SpawnPoint
 @onready var spawn_timer: Timer = $SpawnTimer
+@onready var _walls_mesh: MeshInstance3D = $Walls
+@onready var _roof_mesh: MeshInstance3D = $Roof
+@onready var _walls_base_position: Vector3 = _walls_mesh.position
+@onready var _roof_base_position: Vector3 = _roof_mesh.position
 
 
 ## Godot lifecycle hook: registers this building for lookup (by blobs
 ## finding "the nearest building" to deposit at), sets durability from its
-## BuildingKinds entry, and starts the recurring free spawn at its current
-## growth+upgrade-adjusted duration.
+## BuildingKinds entry, starts the recurring free spawn at its current
+## growth+upgrade-adjusted duration (a no-op while still under
+## construction, see _on_spawn_timer_timeout), and shows the freshly-placed
+## "just started" construction visual.
 func _ready() -> void:
 	add_to_group("buildings")
 	var kind := BuildingKinds.get_kind(kind_id)
@@ -50,6 +63,35 @@ func _ready() -> void:
 	spawn_timer.timeout.connect(_on_spawn_timer_timeout)
 	GameManager.upgrade_changed.connect(_on_upgrade_changed)
 	_apply_growth_upgrade()
+	_apply_construction_visual(0.0)
+
+## Called by whichever blob(s) are in ConstructState with this building as
+## their pending_build_target, once per physics frame. Finishes
+## construction once BuildingKinds' build_labor is reached.
+func add_construction_progress(amount: float) -> void:
+	if not is_under_construction:
+		return
+	construction_progress += amount
+	var required: float = BuildingKinds.get_kind(kind_id).build_labor
+	if construction_progress >= required:
+		is_under_construction = false
+		_apply_construction_visual(1.0)
+		Effects.spawn_command_marker(get_parent(), global_position + Vector3(0.0, 0.05, 0.0), Color(1.0, 0.85, 0.3, 1.0))
+	else:
+		_apply_construction_visual(construction_progress / required)
+
+## Scales the purely-cosmetic Walls/Roof meshes (never the "Solid"
+## collider, which stays full-size throughout so the building already
+## occupies/blocks its cell the moment it's placed) so an in-progress
+## building visibly rises from a low foundation up to its full height.
+## Walls' own position.y is repositioned (not just its scale) so its base
+## stays anchored to the ground instead of shrinking toward its own
+## midpoint and sinking half underground.
+func _apply_construction_visual(fraction: float) -> void:
+	var height_fraction: float = lerp(0.15, 1.0, clamp(fraction, 0.0, 1.0))
+	_walls_mesh.scale.y = height_fraction
+	_walls_mesh.position.y = _walls_base_position.y * height_fraction
+	_roof_mesh.position.y = _roof_base_position.y * height_fraction
 
 ## Signal handler for GameManager.upgrade_changed: only the "growth" stat
 ## affects this building, and only its own spawn-timer duration.
@@ -69,6 +111,8 @@ func _apply_growth_upgrade() -> void:
 ## BuildingKinds.upgrade_costs). Returns whether it went through; the
 ## caller (BuildingMenu) is responsible for refreshing its own display.
 func try_upgrade() -> bool:
+	if is_under_construction:
+		return false
 	var kind := BuildingKinds.get_kind(kind_id)
 	if upgrade_level >= kind.upgrade_costs.size():
 		return false
@@ -84,6 +128,8 @@ func try_upgrade() -> bool:
 ## shown. Level 3's perk swaps the always-"worker" default for a random
 ## kind, a small qualitative bonus rather than another numeric tweak.
 func _on_spawn_timer_timeout() -> void:
+	if is_under_construction:
+		return
 	var offset := Vector3(randf_range(-0.6, 0.6), 0.0, randf_range(-0.6, 0.6))
 	var kind_to_spawn := AUTO_SPAWN_KIND
 	if upgrade_level >= 3:
@@ -95,6 +141,8 @@ func _on_spawn_timer_timeout() -> void:
 ## reached upgrade level 2). Returns whether the purchase went through;
 ## BuildingMenu uses this to drive its Hire section.
 func hire_blob(blob_kind_id: String) -> bool:
+	if is_under_construction:
+		return false
 	var kind = BlobKinds.get_kind(blob_kind_id)
 	var cost: int = kind.hire_cost
 	if upgrade_level >= 2:
@@ -132,6 +180,8 @@ func _spawn_blob(spawn_position: Vector3, show_marker: bool, blob_kind_id: Strin
 ## process anything, it's the final destination. `_from_direction` is
 ## unused but kept for interface consistency with BeltSegment/Processor.
 func try_receive_input(item: Node3D, _from_direction: Vector2i = Vector2i.ZERO) -> bool:
+	if is_under_construction:
+		return false
 	GameManager.add_resource(item.resource_type, item.amount)
 	Effects.spawn_impact(get_parent(), item.global_position + Vector3(0.0, 0.3, 0.0), Effects.resource_color(item.resource_type), 4)
 	item.queue_free()
