@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/unit_info_panel.tscn" id="8"]
 [ext_resource type="PackedScene" path="res://scenes/ui/minimap.tscn" id="9"]
 [ext_resource type="PackedScene" path="res://scenes/ui/resource_info_panel.tscn" id="10"]
+[ext_resource type="PackedScene" path="res://scenes/ui/enemy_info_panel.tscn" id="11"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 
@@ -50,3 +51,5 @@ current = true
 [node name="Minimap" parent="." instance=ExtResource("9")]
 
 [node name="ResourceInfoPanel" parent="." instance=ExtResource("10")]
+
+[node name="EnemyInfoPanel" parent="." instance=ExtResource("11")]

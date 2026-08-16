@@ -10,6 +10,7 @@ extends RefCounted
 
 const MASK_BLOBS := 2
 const MASK_RESOURCES := 4
+const MASK_ENEMIES := 8
 
 ## Deliberately public (no leading underscore) -- OrderManager reads and
 ## (when pruning dead blobs before issuing a command) reassigns this
@@ -26,10 +27,11 @@ func setup(world: Node3D) -> void:
 	_world = world
 
 ## Handles a plain (non-drag) left click: selects a blob if one was clicked,
-## opens the generic building info modal if a building was clicked, opens
-## the resource info modal if a resource node was clicked, or clears the
-## selection if empty ground was clicked (unless shift/additive is held, in
-## which case an empty click does nothing).
+## opens a basic-info popup if an enemy was clicked, opens the generic
+## building info modal if a building was clicked, opens the resource info
+## modal if a resource node was clicked, or clears the selection if empty
+## ground was clicked (unless shift/additive is held, in which case an
+## empty click does nothing).
 func handle_click_select(pos: Vector2, additive: bool) -> void:
 	var hit: Dictionary = _world.raycast(pos, MASK_BLOBS)
 	if hit and hit.collider.is_in_group("blobs"):
@@ -37,6 +39,11 @@ func handle_click_select(pos: Vector2, additive: bool) -> void:
 			clear_selection()
 		select_blob(hit.collider)
 		selection_changed()
+		return
+
+	var enemy_hit: Dictionary = _world.raycast(pos, MASK_ENEMIES)
+	if enemy_hit and enemy_hit.collider.is_in_group("enemies"):
+		_world.enemy_info_panel.open_for(enemy_hit.collider)
 		return
 
 	var resource_hit: Dictionary = _world.raycast(pos, MASK_RESOURCES)

@@ -44,6 +44,7 @@ const MASK_RESOURCES := 4
 @onready var unit_info_panel = $UnitInfoPanel
 @onready var minimap = $Minimap/Display
 @onready var resource_info_panel = $ResourceInfoPanel
+@onready var enemy_info_panel = $EnemyInfoPanel
 
 # Half-size used for the minimap's world<->local mapping -- not a hard map
 # edge (chunks stream in however far the camera can reach), just a generous
