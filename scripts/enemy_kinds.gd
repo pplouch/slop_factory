@@ -34,6 +34,10 @@ func _ready() -> void:
 	_register(Kind.new("spider", "Spider", 0.65, 0.9, 1.5, 0.75, 0.8))
 	_register(Kind.new("scorpion", "Scorpion", 1.3, 1.3, 0.85, 0.1, 1.1))
 	_register(Kind.new("bandit", "Bandit", 1.1, 1.2, 1.05, 0.6, 1.05))
+	_register(Kind.new("yeti", "Yeti", 1.6, 1.4, 0.75, 0.55, 1.35))
+	_register(Kind.new("leech", "Leech", 0.55, 0.85, 1.2, 0.35, 0.75))
+	_register(Kind.new("panther", "Panther", 0.9, 1.25, 1.6, 0.85, 0.9))
+	_register(Kind.new("imp", "Imp", 0.7, 1.35, 1.3, 0.03, 0.8))
 
 func _register(kind: Kind) -> void:
 	_kinds[kind.id] = kind

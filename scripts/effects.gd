@@ -119,5 +119,9 @@ func resource_color(resource_type: String) -> Color:
 			return Color(0.8, 0.82, 0.85)
 		"planks":
 			return Color(0.75, 0.55, 0.3)
+		"ice_crystal":
+			return Color(0.75, 0.9, 1.0)
+		"obsidian":
+			return Color(0.85, 0.4, 0.15)
 		_:
 			return Color(1, 1, 1)

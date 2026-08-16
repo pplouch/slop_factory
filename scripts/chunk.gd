@@ -11,8 +11,11 @@ extends Node3D
 ## just a visual pop.
 
 const CHUNK_SIZE := 25.0
-const SUBDIVISIONS := 6
-const HEIGHT_NOISE_FREQUENCY := 0.08
+## Higher than a bare-minimum grid needs, so river/lake edges (see
+## Biomes.is_water_at) blend reasonably smoothly instead of in blocky
+## quantized steps -- terrain relief is purely cosmetic either way (see
+## _build_ground_mesh), so the extra vertices are cheap.
+const SUBDIVISIONS := 10
 const TEXTURE_SIZE := 32
 const TEXTURE_NOISE_FREQUENCY := 0.18
 
@@ -27,9 +30,19 @@ const RESOURCE_SPAWN_MARGIN := 0.4  # fraction of CHUNK_SIZE kept clear of the v
 const ANIMAL_CHANCE := 0.35
 const ANIMAL_SCENE: PackedScene = preload("res://scenes/animal.tscn")
 
-## Chance this chunk gets a water pond (a little more common near plains).
-const WATER_CHANCE := 0.12
-const WATER_SCENE: PackedScene = preload("res://scenes/water_pond.tscn")
+## Rivers/lakes are placed procedurally (see Biomes.is_river_at/is_lake_at)
+## rather than at a flat per-chunk chance -- a chunk only gets a harvestable
+## water source if one of a few sampled points inside it actually lands on
+## river/lake terrain, so water reads as following the same winding
+## rivers/broad lakes the ground tinting shows instead of scattering
+## puddles anywhere.
+const WATER_PLACEMENT_ATTEMPTS := 6
+const RIVER_POND_SCENE: PackedScene = preload("res://scenes/water_pond.tscn")
+const LAKE_SCENE: PackedScene = preload("res://scenes/lake.tscn")
+
+## Ground vertices/pixels this close to a river/lake position are tinted
+## toward WATER_TINT_COLOR, blended by how close (see _build_ground_mesh).
+const WATER_TINT_COLOR := Color(0.2, 0.4, 0.65)
 
 var biome: Biomes.Biome
 var chunk_coord: Vector2i
@@ -40,15 +53,14 @@ var chunk_coord: Vector2i
 ## chunks never regenerate, but keeps a given coordinate's *shape*
 ## reproducible if ever needed for debugging). Must be called after this
 ## node is already positioned in the tree (global_position must be final)
-## since ground-height noise is sampled in world space for seamless
-## continuity across chunk borders.
+## since ground-height/river/lake sampling all read world-space positions
+## for seamless continuity across chunk borders.
 func generate(coord: Vector2i, p_biome: Biomes.Biome) -> void:
 	chunk_coord = coord
 	biome = p_biome
 	_build_ground()
 	_scatter_resources()
-	if randf() < WATER_CHANCE:
-		_spawn_one(WATER_SCENE)
+	_maybe_spawn_water()
 	if randf() < ANIMAL_CHANCE:
 		var count := randi_range(1, 3)
 		for i in count:
@@ -76,8 +88,11 @@ func _build_ground() -> void:
 	body.add_child(collision)
 
 ## Starts from a normal subdivided PlaneMesh (guaranteed-correct winding/
-## UVs) and displaces only its vertices' Y, so the height variation is
-## purely cosmetic terrain relief -- Blob/Enemy's global_position.y stays
+## UVs), displaces only its vertices' Y using the shared, world-space-
+## sampled Biomes.height_at (so height agrees with whatever any neighboring
+## chunk already computed for the same border vertex), and tints vertices
+## that fall in a river/lake toward WATER_TINT_COLOR. Both are purely
+## cosmetic terrain relief/color -- Blob/Enemy's global_position.y stays
 ## force-clamped to 0.0 every physics frame regardless (see CLAUDE.md:
 ## "this project has no vertical gameplay"), so this never has to agree
 ## with unit footing, just look pleasant from the RTS camera angle.
@@ -89,18 +104,18 @@ func _build_ground_mesh() -> ArrayMesh:
 
 	var arrays: Array = plane.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-
-	var noise := FastNoiseLite.new()
-	noise.seed = hash(chunk_coord)
-	noise.frequency = HEIGHT_NOISE_FREQUENCY
+	var colors := PackedColorArray()
+	colors.resize(vertices.size())
 
 	for i in vertices.size():
 		var v := vertices[i]
 		var world_x := global_position.x + v.x
 		var world_z := global_position.z + v.z
-		var height: float = noise.get_noise_2d(world_x, world_z) * biome.height_amplitude
+		var height: float = Biomes.height_at(world_x, world_z, biome)
 		vertices[i] = Vector3(v.x, height, v.z)
+		colors[i] = WATER_TINT_COLOR if Biomes.is_water_at(world_x, world_z) else Color.WHITE
 	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_COLOR] = colors
 
 	var base_mesh := ArrayMesh.new()
 	base_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
@@ -114,7 +129,10 @@ func _build_ground_mesh() -> ArrayMesh:
 ## Builds a small procedurally-mottled texture tinted to this biome's
 ## ground_color (light/dark noise bands, the same "generate an Image by
 ## hand" technique BeltSegment uses for its stripe texture) so the ground
-## reads as textured terrain rather than a flat color swatch.
+## reads as textured terrain rather than a flat color swatch. Vertex colors
+## (see _build_ground_mesh) multiply on top of this via
+## vertex_color_use_as_albedo, tinting river/lake vertices blue without
+## needing a second, position-sampled texture.
 func _build_ground_material() -> StandardMaterial3D:
 	var img := Image.create(TEXTURE_SIZE, TEXTURE_SIZE, false, Image.FORMAT_RGB8)
 	var tex_noise := FastNoiseLite.new()
@@ -131,6 +149,7 @@ func _build_ground_material() -> StandardMaterial3D:
 	mat.albedo_texture = tex
 	mat.roughness = 0.95
 	mat.uv1_scale = Vector3(4.0, 4.0, 1.0)
+	mat.vertex_color_use_as_albedo = true
 	return mat
 
 ## Scatters a handful of small resource clusters using this chunk's
@@ -151,6 +170,30 @@ func _scatter_resources() -> void:
 			inst.rotation.y = randf() * TAU
 			var s := randf_range(0.85, 1.25)
 			inst.scale = Vector3(s, s, s)
+
+## Tries a few random points within this chunk (see WATER_PLACEMENT_ATTEMPTS)
+## and, the first time one actually lands on lake or river terrain (see
+## Biomes.is_lake_at/is_river_at), spawns a matching harvestable water
+## source there -- a big Lake for a lake hit, a smaller pond for a river
+## crossing. Most chunks sample none and get no water at all, since rivers/
+## lakes are now a localized procedural feature rather than a flat chance
+## anywhere.
+func _maybe_spawn_water() -> void:
+	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
+	for attempt in WATER_PLACEMENT_ATTEMPTS:
+		var local := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+		var world_x := global_position.x + local.x
+		var world_z := global_position.z + local.z
+		if Biomes.is_lake_at(world_x, world_z):
+			var inst: Node3D = LAKE_SCENE.instantiate()
+			add_child(inst)
+			inst.position = local
+			return
+		if Biomes.is_river_at(world_x, world_z):
+			var inst: Node3D = RIVER_POND_SCENE.instantiate()
+			add_child(inst)
+			inst.position = local
+			return
 
 ## Spawns one instance of `scene` at a random point within this chunk.
 func _spawn_one(scene: PackedScene) -> void:
