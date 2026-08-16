@@ -105,6 +105,15 @@ func _ready() -> void:
 	unit_info_panel.equip_weapon_requested.connect(func(): _order_manager.order_equip("weapon"))
 	unit_info_panel.equip_bucket_requested.connect(func(): _order_manager.order_equip("bucket"))
 
+	minimap.camera_move_requested.connect(_move_camera_to)
+
+## Signal handler for Minimap.camera_move_requested: re-centers the camera
+## rig on the clicked world point (only x/z -- the rig's own y is whatever
+## height/zoom already has it at, untouched by this).
+func _move_camera_to(world_pos: Vector3) -> void:
+	camera_rig.position.x = world_pos.x
+	camera_rig.position.z = world_pos.z
+
 ## Godot per-frame hook: delegates to ChunkManager, which internally only
 ## re-checks chunk coverage every CHUNK_CHECK_INTERVAL, not every frame.
 func _process(delta: float) -> void:

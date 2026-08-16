@@ -10,6 +10,11 @@ extends Control
 ## Image whose alpha channel *is* the fog, composited by drawing it on top
 ## of the dots with normal alpha blending.
 
+## Fired when the player clicks this control -- World listens and re-centers
+## the camera there. `world_pos.y` is always 0.0 (the minimap has no notion
+## of terrain height); the listener is expected to only use x/z.
+signal camera_move_requested(world_pos: Vector3)
+
 const FOG_RESOLUTION := 48
 const VISION_RADIUS := 14.0  # world units a blob reveals around itself
 const BG_COLOR := Color(0.05, 0.09, 0.05, 0.92)
@@ -88,6 +93,20 @@ func _world_to_local(world_pos: Vector3) -> Vector2:
 	var nx := (world_pos.x + _world_half_size) / (_world_half_size * 2.0)
 	var nz := (world_pos.z + _world_half_size) / (_world_half_size * 2.0)
 	return Vector2(clamp(nx, 0.0, 1.0) * size.x, clamp(nz, 0.0, 1.0) * size.y)
+
+## Local pixel position within this control's rect -> a world-space position
+## (y always 0.0) -- the exact inverse of _world_to_local.
+func _local_to_world(local_pos: Vector2) -> Vector3:
+	var nx := local_pos.x / size.x
+	var nz := local_pos.y / size.y
+	return Vector3(nx * _world_half_size * 2.0 - _world_half_size, 0.0, nz * _world_half_size * 2.0 - _world_half_size)
+
+## Godot input hook (Control-specific -- only fires for events actually
+## inside this control's rect): a left click re-centers the camera on the
+## clicked point (see World, which listens for camera_move_requested).
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		camera_move_requested.emit(_local_to_world(event.position))
 
 ## Draws the background, every tracked entity as a dot, then the fog mask
 ## on top (its own alpha hides anything under still-unexplored cells).

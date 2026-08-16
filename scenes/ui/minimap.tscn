@@ -13,5 +13,5 @@ offset_left = -196.0
 offset_top = -196.0
 offset_right = -16.0
 offset_bottom = -16.0
-mouse_filter = 2
+mouse_filter = 0
 script = ExtResource("1")
