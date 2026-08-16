@@ -27,6 +27,12 @@ const NEIGHBOR_OFFSETS := {
 ## Grid direction this belt moves items toward: (1,0)/(-1,0)/(0,1)/(0,-1).
 @export var facing: Vector2i = Vector2i(1, 0)
 
+## Duck-typed for BuildingMenu's generic "This Building" info section (see
+## Wall for the same pattern) -- a belt isn't a BuildingKinds entry, just a
+## plain factory-grid piece, but it's still clickable via its ClickArea.
+var kind_id := "belt"
+var display_name := "Conveyor Belt"
+
 ## The item currently riding this belt, or null if empty.
 var current_item: Node3D = null
 
@@ -66,9 +72,19 @@ var _progress: float = 0.0
 ## once placement is finished (see _refresh_neighbor_visuals).
 func _ready() -> void:
 	add_to_group("belts")
+	# Not "buildings" -- that group is also how blobs find a deposit target
+	# (see Blob._find_nearest_building); a belt should never be mistaken for
+	# one. "structures" is enough to make it clickable (see
+	# World._find_building_owner) without affecting that search.
+	add_to_group("structures")
 	_entry_direction = facing
 	_floor_material = _build_floor_material()
 	_tile.set_surface_override_material(0, _floor_material)
+
+## Duck-typed by BuildingMenu (has_method("get_info_text")) to show a line of
+## live status beyond the generic name/durability/ports fields.
+func get_info_text() -> String:
+	return "Carrying: %s" % ("yes" if current_item != null else "empty")
 
 ## Builds a small procedural striped texture (alternating light/dark bands)
 ## and a material that tiles it several times along the belt's length, so

@@ -394,7 +394,14 @@ func _start_detour() -> void:
 func _start_returning_trip() -> BlobState:
 	var building := _find_nearest_building()
 	if building:
-		_set_destination(building.spawn_point.global_position)
+		# Only Building (Town Hall) has a SpawnPoint marker to stand outside
+		# of; other "buildings" group members (StorageDepot, Wall) have no
+		# such child, so fall back to their own position rather than
+		# crashing on a field that doesn't exist for them.
+		var deposit_pos: Vector3 = building.global_position
+		if building.has_node("SpawnPoint"):
+			deposit_pos = building.get_node("SpawnPoint").global_position
+		_set_destination(deposit_pos)
 		return ReturningState.new()
 	return IdleState.new()
 

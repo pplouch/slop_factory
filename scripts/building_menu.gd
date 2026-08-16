@@ -21,6 +21,7 @@ extends CanvasLayer
 @onready var name_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/NameLabel
 @onready var durability_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/DurabilityLabel
 @onready var ports_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/PortsLabel
+@onready var info_extra_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/InfoExtraLabel
 @onready var instance_upgrade_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/UpgradeRow/UpgradeLabel
 @onready var instance_upgrade_button: Button = $Panel/Scroll/VBox/ThisBuildingSection/UpgradeRow/UpgradeButton
 @onready var perk_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/PerkLabel
@@ -59,6 +60,14 @@ func _ready() -> void:
 	GameManager.resource_changed.connect(func(_type, _total): _refresh())
 	GameManager.upgrade_changed.connect(func(_stat, _level): _refresh())
 	GameManager.building_unlocked.connect(func(_id): _refresh())
+
+## Godot per-frame hook: factory pieces (belt/extractor/processor) have
+## live status (carrying/buffered/linked) that changes every frame rather
+## than only on a GameManager signal, so this section alone is kept fresh
+## continuously while the menu is open instead of via signal-driven _refresh.
+func _process(_delta: float) -> void:
+	if visible and _current_building and is_instance_valid(_current_building) and _current_building.has_method("get_info_text"):
+		info_extra_label.text = _current_building.get_info_text()
 
 ## Clicking the dimmed backdrop (i.e. outside the panel itself, since the
 ## panel sits on top of and consumes clicks before they reach here) closes
@@ -222,6 +231,12 @@ func _refresh_this_building() -> void:
 		ports_label.visible = true
 	else:
 		ports_label.visible = false
+
+	if building.has_method("get_info_text"):
+		info_extra_label.text = building.get_info_text()
+		info_extra_label.visible = true
+	else:
+		info_extra_label.visible = false
 
 	var has_instance_upgrades: bool = "upgrade_level" in building and building_kind and not building_kind.upgrade_costs.is_empty()
 	this_building_section.get_node("UpgradeRow").visible = has_instance_upgrades

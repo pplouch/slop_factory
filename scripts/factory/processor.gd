@@ -21,6 +21,11 @@ const PROCESS_TIME := 2.0
 ## input belt must feed in from the opposite direction.
 @export var facing: Vector2i = Vector2i(1, 0)
 
+## Duck-typed for BuildingMenu's generic "This Building" info section (see
+## Wall for the same pattern) -- a processor isn't a BuildingKinds entry.
+var kind_id := "processor"
+var display_name := "Processor"
+
 ## How many INPUT_TYPE items have been received but not yet consumed by a
 ## processing batch.
 var buffered_input: int = 0
@@ -32,6 +37,15 @@ var _processing_elapsed: float = 0.0
 ## Godot lifecycle hook: registers for grid lookup by World.
 func _ready() -> void:
 	add_to_group("structures")
+
+## Duck-typed by BuildingMenu (has_method("get_info_text")) to show a line of
+## live status beyond the generic name/durability/ports fields.
+func get_info_text() -> String:
+	return "Recipe: %d %s -> %d %s\nBuffered: %d/%d%s" % [
+		INPUT_AMOUNT, INPUT_TYPE, OUTPUT_AMOUNT, OUTPUT_TYPE,
+		buffered_input, INPUT_AMOUNT,
+		" (processing...)" if _is_processing else ""
+	]
 
 ## Godot per-frame hook: advances an in-progress batch, or starts a new one
 ## once enough input has been buffered.

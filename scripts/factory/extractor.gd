@@ -15,6 +15,11 @@ const EXTRACT_AMOUNT := 2
 ## Grid direction this extractor's output belt must be placed in.
 @export var facing: Vector2i = Vector2i(1, 0)
 
+## Duck-typed for BuildingMenu's generic "This Building" info section (see
+## Wall for the same pattern) -- an extractor isn't a BuildingKinds entry.
+var kind_id := "extractor"
+var display_name := "Extractor"
+
 ## The resource node this extractor draws from. Set by World right after
 ## placement (found via a nearby-resource-node search); harvesting is a
 ## no-op while this is null or empty.
@@ -28,6 +33,13 @@ var linked_node: Node = null
 func _ready() -> void:
 	add_to_group("structures")
 	extract_timer.timeout.connect(_on_extract_timer_timeout)
+
+## Duck-typed by BuildingMenu (has_method("get_info_text")) to show a line of
+## live status beyond the generic name/durability/ports fields.
+func get_info_text() -> String:
+	if not is_instance_valid(linked_node):
+		return "Not linked to a resource node"
+	return "Linked to: %s (%d left)" % [linked_node.resource_type, linked_node.amount]
 
 ## Signal handler for ExtractTimer: if there's a linked node with resources
 ## left and a belt waiting in the output cell, pulls yield from the node

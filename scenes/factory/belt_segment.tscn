@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://da3uorry544vd" path="res://scripts/factory/belt_segment.gd" id="1"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_belt"]
-size = Vector3(1.8, 0.15, 1.8)
+size = Vector3(2.0, 0.15, 2.0)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rail"]
 albedo_color = Color(0.15, 0.15, 0.18, 1)
@@ -11,7 +11,10 @@ roughness = 0.8
 
 [sub_resource type="BoxMesh" id="BoxMesh_rail"]
 material = SubResource("StandardMaterial3D_rail")
-size = Vector3(1.8, 0.22, 0.16)
+size = Vector3(2.0, 0.22, 0.16)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_click"]
+size = Vector3(2.0, 0.3, 2.0)
 
 [node name="BeltSegment" type="Node3D" unique_id=390606735]
 script = ExtResource("1")
@@ -21,17 +24,23 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.075, 0)
 mesh = SubResource("BoxMesh_belt")
 
 [node name="WallPosZ" type="MeshInstance3D" parent="." unique_id=1139329053]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.19, 0.82)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.19, 0.92)
 mesh = SubResource("BoxMesh_rail")
 
 [node name="WallNegZ" type="MeshInstance3D" parent="." unique_id=36317336]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.19, -0.82)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.19, -0.92)
 mesh = SubResource("BoxMesh_rail")
 
 [node name="WallPosX" type="MeshInstance3D" parent="." unique_id=104016482]
-transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0.82, 0.19, 0)
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0.92, 0.19, 0)
 mesh = SubResource("BoxMesh_rail")
 
 [node name="WallNegX" type="MeshInstance3D" parent="." unique_id=1061477181]
-transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -0.82, 0.19, 0)
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, -0.92, 0.19, 0)
 mesh = SubResource("BoxMesh_rail")
+
+[node name="ClickArea" type="Area3D" parent="." collision_layer=4 collision_mask=0]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, 0)
+
+[node name="ClickShape" type="CollisionShape3D" parent="ClickArea"]
+shape = SubResource("BoxShape3D_click")
