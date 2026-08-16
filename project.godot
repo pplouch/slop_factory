@@ -14,7 +14,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [application]
 
-config/name="test"
+config/name="Rogue idle slop factory survivor rpg ultimate"
 run/main_scene="uid://kw8ovq1qk74x"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
@@ -24,6 +24,9 @@ config/icon="res://icon.svg"
 GameManager="*res://scripts/game_manager.gd"
 Effects="*res://scripts/effects.gd"
 BlobKinds="*res://scripts/blob_kinds.gd"
+BuildingKinds="*res://scripts/building_kinds.gd"
+EnemyKinds="*res://scripts/enemy_kinds.gd"
+Biomes="*res://scripts/biomes.gd"
 
 [display]
 

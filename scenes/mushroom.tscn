@@ -1,0 +1,45 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/resource_node.gd" id="1"]
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_1"]
+radius = 0.35
+height = 0.7
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_stem"]
+albedo_color = Color(0.88, 0.85, 0.78, 1)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_stem"]
+material = SubResource("StandardMaterial3D_stem")
+top_radius = 0.14
+bottom_radius = 0.18
+height = 0.5
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_cap"]
+albedo_color = Color(0.75, 0.2, 0.22, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_cap"]
+material = SubResource("StandardMaterial3D_cap")
+radius = 0.4
+height = 0.5
+
+[node name="Mushroom" type="StaticBody3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+resource_type = "mushroom"
+max_amount = 25
+respawn_time = 30.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.35, 0)
+shape = SubResource("CylinderShape3D_1")
+
+[node name="Stem" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.25, 0)
+mesh = SubResource("CylinderMesh_stem")
+
+[node name="Cap" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.55, 0)
+scale = Vector3(1, 0.55, 1)
+mesh = SubResource("SphereMesh_cap")

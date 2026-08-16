@@ -1,3 +1,4 @@
+class_name ResourceNode
 extends StaticBody3D
 ## A harvestable world object (tree or rock): holds a finite amount of one
 ## resource type, shrinks away when depleted, and grows back after a

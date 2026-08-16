@@ -49,7 +49,10 @@ func _process(delta: float) -> void:
 ## upstream belts naturally back up rather than the buffer growing without
 ## bound). The item itself is consumed immediately -- it becomes internal
 ## state rather than a visible object once "inside" the machine.
-func try_receive_input(item: Node3D) -> bool:
+## `_from_direction` is accepted (matching BeltSegment's signature so a
+## belt can hand off to either without checking which) but unused --
+## consumed items don't need positioning.
+func try_receive_input(item: Node3D, _from_direction: Vector2i = Vector2i.ZERO) -> bool:
 	if item.resource_type != INPUT_TYPE or buffered_input >= INPUT_AMOUNT:
 		return false
 	buffered_input += 1
@@ -70,7 +73,7 @@ func _finish_batch() -> void:
 	var output_pos := global_position + Vector3(facing.x, 0.0, facing.y) * (CELL_SIZE * 0.5)
 	var item := Effects.spawn_resource_item(world, output_pos, OUTPUT_TYPE, OUTPUT_AMOUNT)
 
-	if output_structure and output_structure.has_method("try_receive_input") and output_structure.try_receive_input(item):
+	if output_structure and output_structure.has_method("try_receive_input") and output_structure.try_receive_input(item, facing):
 		return
 	GameManager.add_resource(OUTPUT_TYPE, OUTPUT_AMOUNT)
 	item.queue_free()

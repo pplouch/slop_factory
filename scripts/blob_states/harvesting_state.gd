@@ -38,3 +38,6 @@ func physics_update(blob: CharacterBody3D, delta: float) -> BlobState:
 	if blob._inventory_total() >= blob.carry_capacity or node.amount <= 0:
 		return blob._start_returning_trip()
 	return null
+
+func display_name(_blob: CharacterBody3D) -> String:
+	return "Harvesting"

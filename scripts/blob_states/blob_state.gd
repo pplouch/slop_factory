@@ -38,3 +38,10 @@ func physics_update(_blob: CharacterBody3D, _delta: float) -> BlobState:
 ## simply leave this at its default of false.
 func is_travelling() -> bool:
 	return false
+
+## Short, player-facing label for this state (e.g. "Harvesting"), shown in
+## the unit-info panel when a single blob is selected. Takes `blob` so a
+## state can tailor its label using the blob's own fields (e.g. MovingState
+## distinguishing "moving to harvest" from a plain move order).
+func display_name(_blob: CharacterBody3D) -> String:
+	return "Idle"

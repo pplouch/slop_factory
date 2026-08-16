@@ -2,21 +2,13 @@
 
 [ext_resource type="Script" path="res://world.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/camera_rig.gd" id="2"]
-[ext_resource type="PackedScene" path="res://scenes/building.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://scenes/building_menu.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://scenes/build_palette.tscn" id="6"]
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
-albedo_color = Color(0.29, 0.56, 0.24, 1)
-roughness = 0.95
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
-material = SubResource("StandardMaterial3D_ground")
-size = Vector2(160, 160)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
-size = Vector3(160, 1, 160)
+[ext_resource type="PackedScene" path="res://scenes/debug_menu.tscn" id="7"]
+[ext_resource type="PackedScene" path="res://scenes/unit_info_panel.tscn" id="8"]
+[ext_resource type="PackedScene" path="res://scenes/minimap.tscn" id="9"]
+[ext_resource type="PackedScene" path="res://scenes/resource_info_panel.tscn" id="10"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 
@@ -37,17 +29,6 @@ environment = SubResource("Environment_1")
 rotation_degrees = Vector3(-50, -30, 0)
 shadow_enabled = true
 
-[node name="Ground" type="StaticBody3D" parent="."]
-collision_layer = 1
-collision_mask = 0
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground"]
-mesh = SubResource("PlaneMesh_ground")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
-position = Vector3(0, -0.5, 0)
-shape = SubResource("BoxShape3D_ground")
-
 [node name="CameraRig" type="Node3D" parent="."]
 script = ExtResource("2")
 
@@ -56,11 +37,16 @@ position = Vector3(0, 16, 12)
 rotation_degrees = Vector3(-53, 0, 0)
 current = true
 
-[node name="Building" parent="." instance=ExtResource("3")]
-position = Vector3(0, 0, -3)
-
 [node name="HUD" parent="." instance=ExtResource("4")]
 
 [node name="BuildingMenu" parent="." instance=ExtResource("5")]
 
 [node name="BuildPalette" parent="." instance=ExtResource("6")]
+
+[node name="DebugMenu" parent="." instance=ExtResource("7")]
+
+[node name="UnitInfoPanel" parent="." instance=ExtResource("8")]
+
+[node name="Minimap" parent="." instance=ExtResource("9")]
+
+[node name="ResourceInfoPanel" parent="." instance=ExtResource("10")]

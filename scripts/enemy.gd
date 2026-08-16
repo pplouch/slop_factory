@@ -1,10 +1,11 @@
 class_name Enemy
 extends Combatant
-## The map's hostile creature: wanders near its spawn point, and once a blob
-## comes within DETECTION_RANGE, closes in and trades blows with it until
-## one of them dies or the blob moves back out of range. Health/damage/
-## regen math is inherited from Combatant; this file only adds movement and
-## attack-timing behavior.
+## The map's hostile creatures: wander near their spawn point, and once a
+## blob comes within DETECTION_RANGE, close in and trade blows with it
+## until one of them dies or the blob moves back out of range. Health/
+## damage/regen math is inherited from Combatant; this file adds movement/
+## attack-timing behavior shared by every kind, with EnemyKinds supplying
+## the per-kind stat multipliers and look (mirrors Blob/BlobKinds exactly).
 
 const MOVE_SPEED := 2.6
 const DETECTION_RANGE := 9.0
@@ -18,8 +19,14 @@ const BASE_DEXTERITY := 0.6
 const BASE_ATTACK_POWER := 3.0
 const BASE_ATTACK_INTERVAL := 1.4
 
+## Which EnemyKinds archetype this is. Must be set (by whoever instantiates
+## the scene, e.g. World's biome-aware spawner) *before* this node enters
+## the tree, since _ready() reads it immediately to pick stats and cosmetics.
+@export var kind_id: String = "slime"
+
 var attack_power: float = BASE_ATTACK_POWER
 var attack_interval: float = BASE_ATTACK_INTERVAL
+var move_speed: float = MOVE_SPEED
 
 ## The point wandering is centered on (its spawn position), so a lone enemy
 ## roams a local patch instead of drifting arbitrarily far over time.
@@ -28,17 +35,42 @@ var _wander_target: Vector3 = Vector3.ZERO
 var _wander_timer: float = 0.0
 var _attack_cooldown: float = 0.0
 
+@onready var _visuals: Node3D = $Visuals
+@onready var _body_mesh: MeshInstance3D = $Visuals/Body
 
-## Godot lifecycle hook: sets starting stats and registers for lookup by
-## Blob's combat scan (see Blob._find_nearest_enemy_in_range).
+
+## Godot lifecycle hook: sets starting stats (scaled by both the current
+## difficulty ramp -- see GameManager.get_enemy_difficulty_multiplier, so
+## enemies spawned early in a session are noticeably weaker than ones
+## spawned later -- and this instance's EnemyKinds multipliers), applies
+## its kind's look, and registers for lookup by Blob's combat scan (see
+## Blob._find_nearest_enemy_in_range).
 func _ready() -> void:
+	super._ready()
 	add_to_group("enemies")
-	max_health = BASE_MAX_HEALTH
+	var kind := EnemyKinds.get_kind(kind_id)
+	var difficulty := GameManager.get_enemy_difficulty_multiplier()
+	max_health = BASE_MAX_HEALTH * difficulty * kind.health_mult
 	health = max_health
 	health_regen = BASE_HEALTH_REGEN
 	dexterity = BASE_DEXTERITY
+	attack_power = BASE_ATTACK_POWER * difficulty * kind.attack_mult
+	move_speed = MOVE_SPEED * kind.speed_mult
+	_apply_kind_look(kind)
 	_home = global_position
 	_pick_new_wander_target()
+
+## Tints and scales this enemy according to its EnemyKinds archetype, the
+## same "duplicate the shared material so only this instance is recolored"
+## approach Blob uses for its own per-kind look. Scales the cosmetic
+## Visuals node, never this CharacterBody3D's own root -- scaling a
+## dynamic physics body directly produces a transform Jolt can't simulate
+## correctly (see CLAUDE.md).
+func _apply_kind_look(kind: EnemyKinds.Kind) -> void:
+	var mat: StandardMaterial3D = _body_mesh.mesh.material.duplicate()
+	mat.albedo_color = Color.from_hsv(kind.hue, 0.55, 0.35 if kind.hue == 0.0 else 0.6)
+	_body_mesh.set_surface_override_material(0, mat)
+	_visuals.scale = Vector3.ONE * kind.body_scale
 
 ## Godot physics tick: chases and fights the nearest blob in detection
 ## range, or wanders near home if none are close, then runs shared regen.
@@ -77,7 +109,7 @@ func _chase_and_attack(blob: Node, delta: float) -> void:
 
 	if dist > ATTACK_RANGE:
 		var dir := to_blob.normalized()
-		velocity = dir * MOVE_SPEED
+		velocity = dir * move_speed
 		look_at(global_position + dir, Vector3.UP)
 		return
 
@@ -98,7 +130,7 @@ func _wander(delta: float) -> void:
 	var dist := to_target.length()
 	if dist > 0.1:
 		var dir := to_target.normalized()
-		velocity = dir * MOVE_SPEED * 0.5
+		velocity = dir * move_speed * 0.5
 		look_at(global_position + dir, Vector3.UP)
 	else:
 		velocity = Vector3.ZERO

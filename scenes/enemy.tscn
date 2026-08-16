@@ -34,21 +34,23 @@ script = ExtResource("1")
 position = Vector3(0, 0.45, 0)
 shape = SubResource("SphereShape3D_1")
 
-[node name="Body" type="MeshInstance3D" parent="."]
+[node name="Visuals" type="Node3D" parent="."]
+
+[node name="Body" type="MeshInstance3D" parent="Visuals"]
 position = Vector3(0, 0.45, 0)
 scale = Vector3(1, 0.9, 1)
 mesh = SubResource("SphereMesh_body")
 
-[node name="Spike1" type="MeshInstance3D" parent="."]
+[node name="Spike1" type="MeshInstance3D" parent="Visuals"]
 position = Vector3(0, 0.82, 0)
 mesh = SubResource("CylinderMesh_spike")
 
-[node name="Spike2" type="MeshInstance3D" parent="."]
+[node name="Spike2" type="MeshInstance3D" parent="Visuals"]
 position = Vector3(0.22, 0.62, 0.15)
 rotation_degrees = Vector3(0, 0, -35)
 mesh = SubResource("CylinderMesh_spike")
 
-[node name="Spike3" type="MeshInstance3D" parent="."]
+[node name="Spike3" type="MeshInstance3D" parent="Visuals"]
 position = Vector3(-0.15, 0.62, -0.22)
 rotation_degrees = Vector3(20, 0, 25)
 mesh = SubResource("CylinderMesh_spike")

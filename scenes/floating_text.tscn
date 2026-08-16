@@ -4,8 +4,8 @@
 
 [node name="FloatingText" type="Label3D"]
 billboard = 1
-font_size = 18
-outline_size = 4
+font_size = 12
+outline_size = 3
 fixed_size = true
 no_depth_test = true
 script = ExtResource("1")

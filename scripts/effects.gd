@@ -19,6 +19,58 @@ const IMPACT_PARTICLES_SCENE: PackedScene = preload("res://scenes/impact_particl
 const COMMAND_MARKER_SCENE: PackedScene = preload("res://scenes/command_marker.tscn")
 const RESOURCE_ITEM_SCENE: PackedScene = preload("res://scenes/factory/resource_item.tscn")
 
+const CHIRP_MIX_RATE := 22050
+const CHIRP_DURATION := 0.14
+const CHIRP_FREQ_RANGE := Vector2(700.0, 1150.0)
+
+## Built once here (rather than loading a sound asset -- none exist in this
+## project) and reused for every chirp; per-play pitch_scale randomization
+## (see play_chirp) gives enough variety without needing several baked
+## waveforms.
+var _chirp_stream: AudioStreamWAV
+
+
+## Godot lifecycle hook: bakes the shared chirp waveform.
+func _ready() -> void:
+	_chirp_stream = _build_chirp_stream()
+
+## Synthesizes a short upward-sweeping sine chirp with a decaying envelope
+## -- a "cute" critter blip built entirely from raw PCM samples, since no
+## audio assets exist in this project.
+func _build_chirp_stream() -> AudioStreamWAV:
+	var sample_count := int(CHIRP_MIX_RATE * CHIRP_DURATION)
+	var data := PackedByteArray()
+	data.resize(sample_count * 2)
+	for i in sample_count:
+		var t := float(i) / CHIRP_MIX_RATE
+		var progress := float(i) / sample_count
+		var freq: float = lerp(CHIRP_FREQ_RANGE.x, CHIRP_FREQ_RANGE.y, progress)
+		var envelope := pow(1.0 - progress, 2.0)
+		var sample := sin(TAU * freq * t) * envelope
+		data.encode_s16(i * 2, int(clamp(sample, -1.0, 1.0) * 32767.0))
+
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = CHIRP_MIX_RATE
+	stream.stereo = false
+	stream.data = data
+	return stream
+
+## Plays one instance of the shared chirp sound at `global_pos`, with a
+## random pitch_scale (rather than a fixed pitch every time) so a crowd of
+## blobs chirping doesn't sound like one sample copy-pasted. Self-frees
+## once playback finishes.
+func play_chirp(parent: Node, global_pos: Vector3, pitch_variance: float = 0.15) -> void:
+	var player := AudioStreamPlayer3D.new()
+	player.stream = _chirp_stream
+	player.pitch_scale = randf_range(1.0 - pitch_variance, 1.0 + pitch_variance)
+	player.unit_size = 6.0
+	player.volume_db = -6.0
+	parent.add_child(player)
+	player.global_position = global_pos
+	player.play()
+	player.finished.connect(player.queue_free)
+
 ## Spawns a floating label (e.g. "+3") that rises and fades out on its own,
 ## parented under `parent` at `global_pos`.
 func spawn_floating_text(parent: Node, global_pos: Vector3, text: String, color: Color) -> void:

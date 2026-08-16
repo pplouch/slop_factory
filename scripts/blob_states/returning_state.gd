@@ -21,3 +21,6 @@ func physics_update(blob: CharacterBody3D, _delta: float) -> BlobState:
 
 	blob.velocity = Vector3.ZERO
 	return blob._deposit()
+
+func display_name(_blob: CharacterBody3D) -> String:
+	return "Returning to deposit"

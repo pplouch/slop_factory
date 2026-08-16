@@ -12,16 +12,17 @@ const MASK_GROUND := 1
 const MASK_BLOBS := 2
 const MASK_RESOURCES := 4
 
-const TREE_SCENE: PackedScene = preload("res://scenes/tree.tscn")
-const ROCK_SCENE: PackedScene = preload("res://scenes/rock.tscn")
 const ENEMY_SCENE: PackedScene = preload("res://scenes/enemy.tscn")
+const BLOB_SCENE: PackedScene = preload("res://scenes/blob.tscn")
 
 const BELT_SCENE: PackedScene = preload("res://scenes/factory/belt_segment.tscn")
 const EXTRACTOR_SCENE: PackedScene = preload("res://scenes/factory/extractor.tscn")
 const PROCESSOR_SCENE: PackedScene = preload("res://scenes/factory/processor.tscn")
+const WALL_SCENE: PackedScene = preload("res://scenes/factory/wall.tscn")
 
 const COLOR_MOVE := Color(0.45, 1.0, 0.55)
 const COLOR_HARVEST := Color(1.0, 0.8, 0.25)
+const COLOR_PATROL := Color(0.4, 0.7, 1.0)
 
 # A right-click harvest order spreads selected blobs across same-type nodes
 # within this radius of the click, capping how many pile onto any one node,
@@ -29,55 +30,90 @@ const COLOR_HARVEST := Color(1.0, 0.8, 0.25)
 const MAX_HARVEST_SPREAD_RADIUS := 16.0
 const MAX_BLOBS_PER_NODE := 2
 
-# -- Procedural scenery generation tuning --
-# The map is a square of side 2*MAP_HALF_SIZE (must match the Ground plane
-# in world.tscn). Cluster centers are scattered at random angle/distance
-# from the building, staying outside BUILDING_SAFE_RADIUS of it.
-const MAP_HALF_SIZE := 75.0
-const BUILDING_SAFE_RADIUS := 10.0
-const CLUSTER_MIN_SEPARATION := 6.0
+# -- Founder crew --
+# There's no building at game start (see the BUILD MODE section) -- the
+# player has to construct the Town Hall themselves. These few blobs exist
+# so there's something to select and command before that happens, spawned
+# directly by World rather than by any Building.
+const FOUNDER_BLOB_COUNT := 3
+const FOUNDER_SPAWN_RADIUS := 2.0
 
-const TREE_CLUSTER_COUNT := 6
-const TREE_CLUSTER_RADIUS_RANGE := Vector2(6.0, 11.0)
-const TREE_CLUSTER_COUNT_RANGE := Vector2i(8, 14)
+# -- Chunk streaming (see scripts/chunk.gd) --
+# The world is tiled into Chunk-sized squares that generate their ground/
+# scenery the first time the camera comes near them (Minecraft-style
+# loading), keyed by Vector2i chunk coordinate. Deliberately load-only --
+# see Chunk's header for why chunks are never unloaded once generated.
+const CHUNK_LOAD_RADIUS := 3
+const CHUNK_CHECK_INTERVAL := 0.5
 
-const ROCK_CLUSTER_COUNT := 5
-const ROCK_CLUSTER_RADIUS_RANGE := Vector2(5.0, 9.0)
-const ROCK_CLUSTER_COUNT_RANGE := Vector2i(5, 9)
+# Half-size used for the minimap's world<->local mapping and the
+# pathfinding grid's bounds -- not a hard map edge (chunks stream in
+# however far the camera can reach), just a generous fixed scale for both.
+const MINIMAP_HALF_SIZE := 90.0
+const PATHING_GRID_HALF_SIZE := 90.0
 
 # -- Enemy population tuning --
 # A lone ambient threat, maintained at a small target count rather than
 # growing unbounded: a background check tops the population back up a
-# while after something dies, similar to how resource nodes respawn.
+# while after something dies, similar to how resource nodes respawn. Each
+# spawn picks a random *already-loaded* chunk and an enemy kind from that
+# chunk's biome (see Biomes), so kind and difficulty stay biome-appropriate.
 const ENEMY_TARGET_COUNT := 3
-const ENEMY_SPAWN_MIN_DIST := BUILDING_SAFE_RADIUS + 12.0
 const ENEMY_POPULATION_CHECK_INTERVAL := 20.0
 
+# -- Colony food/water upkeep (see GameManager.consume_colony_supplies) --
+const COLONY_SUPPLY_INTERVAL := 30.0
+
 # -- Build mode / factory automation tuning --
-# Extractors, belts, and processors snap to a square grid so belt chains
-# line up edge-to-edge; blobs, trees, and enemies are unaffected and stay
-# free-form. See the "BUILD MODE" section below for placement/ghost logic.
+# Extractors, belts, processors, and walls snap to a square grid so belt
+# chains line up edge-to-edge; blobs, trees, and enemies are unaffected and
+# stay free-form. See the "BUILD MODE" section below for placement/ghost
+# logic. Belts are deliberately walkable (not in NON_BLOCKING_KINDS'
+# complement below) -- see _kind_blocks_movement.
 const GRID_CELL_SIZE := 2.0
 const EXTRACTOR_LINK_RADIUS := 3.0
-const BUILD_COSTS := {"belt": 5, "extractor": 25, "processor": 30}
+const BUILD_COSTS := {"belt": 5, "extractor": 25, "processor": 30, "wall": 8}
 const GHOST_VALID_COLOR := Color(0.3, 1.0, 0.4, 0.55)
 const GHOST_INVALID_COLOR := Color(1.0, 0.3, 0.3, 0.55)
 
 @onready var camera: Camera3D = $CameraRig/Camera3D
+@onready var camera_rig: Node3D = $CameraRig
 @onready var hud = $HUD
 @onready var selection_box = $HUD/SelectionBox
 @onready var building_menu = $BuildingMenu
 @onready var build_palette = $BuildPalette
+@onready var debug_menu = $DebugMenu
+@onready var unit_info_panel = $UnitInfoPanel
+@onready var minimap = $Minimap/Display
+@onready var resource_info_panel = $ResourceInfoPanel
 
 var selected_blobs: Array = []
 var _dragging := false
 var _drag_start := Vector2.ZERO
 var _hovered_blob: Node = null
 
+# Set by pressing P with blobs selected; the *next* right-click sets the
+# patrol's far point instead of issuing a normal move/harvest order (see
+# _handle_right_click). Hold ("H") and Explore ("X") take effect
+# immediately with no follow-up click needed.
+var _pending_patrol := false
+
 # Grid cell (Vector2i) -> the belt/extractor/processor placed there. Lets
 # each structure look up its neighbors (e.g. "is there a belt in front of
 # me to hand this item to?") without needing direct references to each other.
 var _grid_structures: Dictionary = {}
+
+# Chunk coordinate (Vector2i) -> the generated Chunk node there. See
+# scripts/chunk.gd and _ensure_chunks_loaded.
+var _loaded_chunks: Dictionary = {}
+var _chunk_check_timer := 0.0
+
+# Grid-based A* used so blobs/enemies route *around* walls/buildings/
+# extractors/processors instead of just locally jittering against them
+# (belts stay walkable, see _kind_blocks_movement). Rebuilt as a flat plane
+# once at startup; individual cells go solid/clear as structures are
+# placed/demolished (see _mark_pathing_cell).
+var _pathing_grid := AStarGrid2D.new()
 
 var _build_mode_active := false
 var _build_selected_kind := "belt"
@@ -86,14 +122,28 @@ var _build_ghost: Node3D = null
 var _build_ghost_material: StandardMaterial3D = null
 var _build_ghost_cell := Vector2i.ZERO
 
+# Translucent discs shown over every resource node while "extractor" is the
+# selected build kind, so the player can see valid linking range at a
+# glance instead of guessing and getting an invalid-placement red ghost.
+var _extractor_range_indicators: Array = []
 
-## Godot lifecycle hook: procedurally scatters several separate tree and
-## rock patches across the map, then seeds the ambient enemy population and
-## starts the timer that keeps topping it back up. Every other object
-## (blobs, buildings, UI) already exists as scene children.
+var _debug_menu_active := false
+# Whether DebugMenu's "Toggle Hitboxes" overlay (collision shapes + attack/
+# detection/link ranges, attached as temporary child nodes tagged
+# "debug_visual_nodes") is currently shown.
+var _debug_visuals_active := false
+
+
+## Godot lifecycle hook: sets up the pathing grid, streams in the chunks
+## around the origin (where founder blobs start and the player will likely
+## build first), seeds the ambient enemy population and starts the timer
+## that keeps topping it back up. Every other object (blobs, buildings, UI)
+## already exists as scene children.
 func _ready() -> void:
-	_spawn_resource_clusters(TREE_SCENE, TREE_CLUSTER_COUNT, TREE_CLUSTER_RADIUS_RANGE, TREE_CLUSTER_COUNT_RANGE)
-	_spawn_resource_clusters(ROCK_SCENE, ROCK_CLUSTER_COUNT, ROCK_CLUSTER_RADIUS_RANGE, ROCK_CLUSTER_COUNT_RANGE)
+	minimap.set_world_bounds(MINIMAP_HALF_SIZE)
+	_setup_pathing_grid()
+	_spawn_founder_blobs()
+	_ensure_chunks_loaded(Vector3.ZERO)
 
 	for i in ENEMY_TARGET_COUNT:
 		_spawn_one_enemy()
@@ -103,18 +153,58 @@ func _ready() -> void:
 	add_child(population_timer)
 	population_timer.start()
 
+	var colony_supply_timer := Timer.new()
+	colony_supply_timer.wait_time = COLONY_SUPPLY_INTERVAL
+	colony_supply_timer.timeout.connect(_tick_colony_supplies)
+	add_child(colony_supply_timer)
+	colony_supply_timer.start()
+
 	build_palette.toggle_requested.connect(_toggle_build_mode)
 	build_palette.kind_selected.connect(_on_build_kind_selected)
 
+	debug_menu.toggle_requested.connect(_toggle_debug_menu)
+	debug_menu.spawn_blob_requested.connect(_debug_spawn_blob)
+	debug_menu.spawn_enemy_requested.connect(_spawn_one_enemy)
+	debug_menu.add_resources_requested.connect(_debug_add_resources)
+	debug_menu.toggle_hitboxes_requested.connect(_toggle_debug_visuals)
 
-## Spawns one enemy at a random angle/distance from the building, staying
-## outside ENEMY_SPAWN_MIN_DIST of it and inside the map edge.
+## Godot per-frame hook: periodically (not every frame -- see
+## CHUNK_CHECK_INTERVAL) makes sure every chunk within CHUNK_LOAD_RADIUS of
+## the camera's current focus point has been generated.
+func _process(delta: float) -> void:
+	_chunk_check_timer -= delta
+	if _chunk_check_timer <= 0.0:
+		_chunk_check_timer = CHUNK_CHECK_INTERVAL
+		_ensure_chunks_loaded(camera_rig.position)
+
+## Spawns the player's starting crew directly (not via any Building, since
+## none exists yet -- the player has to construct the Town Hall themselves
+## via Build Mode) at the map origin, evenly spaced in a small ring.
+func _spawn_founder_blobs() -> void:
+	for i in FOUNDER_BLOB_COUNT:
+		var angle := (TAU / FOUNDER_BLOB_COUNT) * i
+		var offset := Vector3(cos(angle), 0.0, sin(angle)) * FOUNDER_SPAWN_RADIUS
+		var blob: Node3D = BLOB_SCENE.instantiate()
+		blob.kind_id = "worker"
+		add_child(blob)
+		blob.global_position = offset
+		blob.play_spawn_pop()
+
+## Spawns one enemy at a random point within a random already-loaded chunk,
+## picking one of that chunk's biome's enemy kinds (see Biomes/EnemyKinds)
+## so both difficulty and flavor stay appropriate to where it lands -- a
+## chunk near the origin is always "plains" (slime only), so the immediate
+## starting area never spawns the tougher outer-biome kinds.
 func _spawn_one_enemy() -> void:
-	var angle := randf() * TAU
-	var dist := randf_range(ENEMY_SPAWN_MIN_DIST, MAP_HALF_SIZE - 10.0)
+	if _loaded_chunks.is_empty():
+		return
+	var chunk: Chunk = _loaded_chunks.values().pick_random()
+	var kind_id: String = chunk.biome.enemy_kind_ids.pick_random()
+	var half := Chunk.CHUNK_SIZE * 0.5
 	var enemy: Node3D = ENEMY_SCENE.instantiate()
+	enemy.kind_id = kind_id
 	add_child(enemy)
-	enemy.global_position = Vector3(cos(angle) * dist, 0.0, sin(angle) * dist)
+	enemy.global_position = chunk.global_position + Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
 
 ## Signal handler for the population-check timer: tops the enemy count back
 ## up to ENEMY_TARGET_COUNT one at a time (rather than all at once) if
@@ -123,58 +213,228 @@ func _maintain_enemy_population() -> void:
 	if get_tree().get_nodes_in_group("enemies").size() < ENEMY_TARGET_COUNT:
 		_spawn_one_enemy()
 
-## Scatters `cluster_count` separate patches of `scene` around the map, each
-## with its own randomized position, radius (within `radius_range`) and
-## instance count (within `count_range`). This is what gives the map its
-## "several patches to discover, further out in every direction" feel,
-## rather than one or two fixed blobs of scenery.
-func _spawn_resource_clusters(scene: PackedScene, cluster_count: int, radius_range: Vector2, count_range: Vector2i) -> void:
-	var placed_centers: Array = []
-	for i in cluster_count:
-		var radius := randf_range(radius_range.x, radius_range.y)
-		var center := _find_cluster_center(radius, placed_centers)
-		placed_centers.append(center)
-		var count := randi_range(count_range.x, count_range.y)
-		_spawn_cluster(scene, center, radius, count)
+## Signal handler for the colony-supply timer: drains this tick's food/
+## water upkeep for the current blob count. World owns the population
+## query; GameManager owns the actual stockpile math (see
+## GameManager.consume_colony_supplies).
+func _tick_colony_supplies() -> void:
+	GameManager.consume_colony_supplies(get_tree().get_nodes_in_group("blobs").size())
 
-## Picks a cluster center at a random angle/distance from the building
-## (staying outside BUILDING_SAFE_RADIUS of it and inside the map edge),
-## retrying a handful of times to also stay clear of previously placed
-## clusters so separate patches read as distinct rather than overlapping
-## into one another. Falls back to whatever the last attempt found if it
-## can't avoid overlap within the retry budget -- still a valid placement,
-## just possibly touching a neighboring patch.
-func _find_cluster_center(radius: float, existing: Array) -> Vector3:
-	var min_dist := BUILDING_SAFE_RADIUS + radius
-	var max_dist := MAP_HALF_SIZE - radius - 5.0
-	var candidate := Vector3.ZERO
-	for attempt in 6:
-		var angle := randf() * TAU
-		var dist := randf_range(min_dist, max_dist)
-		candidate = Vector3(cos(angle) * dist, 0.0, sin(angle) * dist)
-		var far_enough := true
-		for other in existing:
-			if candidate.distance_to(other) < radius + CLUSTER_MIN_SEPARATION:
-				far_enough = false
-				break
-		if far_enough:
-			break
-	return candidate
+## Signal handler for DebugMenu.toggle_requested.
+func _toggle_debug_menu() -> void:
+	_debug_menu_active = not _debug_menu_active
+	debug_menu.set_active(_debug_menu_active)
 
-## Scatters `count` instances of `scene` in a uniform-density disk of
-## `radius` around `center`, each with a random facing and a slightly
-## randomized scale, so a cluster of trees/rocks looks organic rather than
-## like a grid.
-func _spawn_cluster(scene: PackedScene, center: Vector3, radius: float, count: int) -> void:
-	for i in count:
-		var inst: Node3D = scene.instantiate()
-		add_child(inst)
-		var angle := randf() * TAU
-		var r := sqrt(randf()) * radius
-		inst.global_position = center + Vector3(cos(angle) * r, 0.0, sin(angle) * r)
-		inst.rotation.y = randf() * TAU
-		var s := randf_range(0.85, 1.25)
-		inst.scale = Vector3(s, s, s)
+## Signal handler for DebugMenu's "Generate Blob" button: asks the nearest
+## building to spawn a free blob.
+func _debug_spawn_blob() -> void:
+	var building = get_tree().get_first_node_in_group("buildings")
+	if building:
+		building.debug_spawn_blob()
+
+## Signal handler for DebugMenu's "Add Resources" button: tops up every
+## known resource type by 100.
+func _debug_add_resources() -> void:
+	GameManager.add_resource("wood", 100)
+	GameManager.add_resource("stone", 100)
+	GameManager.add_resource("planks", 100)
+
+## Signal handler for DebugMenu's "Show/Hide Hitboxes" button: spawns (or
+## clears) translucent collision-shape and attack/detection/link-range
+## overlays on every currently-existing blob/enemy/resource node/structure.
+## A one-time snapshot rather than a continuous overlay -- anything spawned
+## *after* toggling on won't get one until toggled off and back on, which
+## is an acceptable simplification for a debug-only tool.
+func _toggle_debug_visuals() -> void:
+	_debug_visuals_active = not _debug_visuals_active
+	debug_menu.set_hitboxes_active(_debug_visuals_active)
+	if _debug_visuals_active:
+		_spawn_debug_visuals()
+	else:
+		_clear_debug_visuals()
+
+## Attaches range-ring + collision-hitbox overlay children to every relevant
+## live object. Overlays are children of their owner (so they move/rotate
+## with it for free and get cleaned up automatically if the owner dies)
+## rather than tracked in a separate array; _clear_debug_visuals finds them
+## all again via their shared "debug_visual_nodes" group.
+func _spawn_debug_visuals() -> void:
+	_clear_debug_visuals()
+	for blob in get_tree().get_nodes_in_group("blobs"):
+		_attach_range_ring(blob, blob.ATTACK_RANGE, Color(1.0, 0.3, 0.3, 0.35))
+	for enemy in get_tree().get_nodes_in_group("enemies"):
+		_attach_range_ring(enemy, enemy.ATTACK_RANGE, Color(1.0, 0.3, 0.3, 0.35))
+		_attach_range_ring(enemy, enemy.DETECTION_RANGE, Color(1.0, 0.9, 0.2, 0.2))
+	for n in get_tree().get_nodes_in_group("resource_nodes"):
+		_attach_range_ring(n, EXTRACTOR_LINK_RADIUS, Color(0.3, 1.0, 0.5, 0.18))
+	for group_name in ["blobs", "enemies", "structures", "buildings"]:
+		for n in get_tree().get_nodes_in_group(group_name):
+			_attach_hitbox_markers(n)
+
+## Adds a flat translucent ring of the given `radius`/`color` as a child of
+## `target`, used to visualize an attack/detection/link range at a glance.
+func _attach_range_ring(target: Node3D, radius: float, color: Color) -> void:
+	if radius <= 0.0:
+		return
+	var mesh_inst := MeshInstance3D.new()
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = max(radius - 0.06, 0.01)
+	mesh.outer_radius = radius
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = color
+	mesh.material = mat
+	mesh_inst.mesh = mesh
+	mesh_inst.add_to_group("debug_visual_nodes")
+	target.add_child(mesh_inst)
+	mesh_inst.position = Vector3(0.0, 0.05, 0.0)
+
+## Adds a translucent wireframe-ish mesh matching each of `target`'s
+## CollisionShape3D children, parented to the shape itself so its position
+## automatically matches without any extra transform bookkeeping.
+func _attach_hitbox_markers(target: Node3D) -> void:
+	for child in target.get_children():
+		if not (child is CollisionShape3D) or child.shape == null:
+			continue
+		var mat := StandardMaterial3D.new()
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = Color(1.0, 1.0, 0.2, 0.25)
+		var mesh: Mesh = null
+		if child.shape is SphereShape3D:
+			var m := SphereMesh.new()
+			m.radius = child.shape.radius
+			m.height = child.shape.radius * 2.0
+			mesh = m
+		elif child.shape is BoxShape3D:
+			var m := BoxMesh.new()
+			m.size = child.shape.size
+			mesh = m
+		elif child.shape is CylinderShape3D:
+			var m := CylinderMesh.new()
+			m.top_radius = child.shape.radius
+			m.bottom_radius = child.shape.radius
+			m.height = child.shape.height
+			mesh = m
+		if mesh == null:
+			continue
+		mesh.material = mat
+		var vis := MeshInstance3D.new()
+		vis.mesh = mesh
+		vis.add_to_group("debug_visual_nodes")
+		child.add_child(vis)
+
+## Removes every debug-visual overlay node, e.g. when toggling the overlay
+## off or refreshing it.
+func _clear_debug_visuals() -> void:
+	for n in get_tree().get_nodes_in_group("debug_visual_nodes"):
+		if is_instance_valid(n):
+			n.queue_free()
+
+# ============================================================================
+# CHUNK STREAMING -- Minecraft-style "generate as the camera approaches"
+# world tiling. See scripts/chunk.gd for what a chunk actually builds.
+# ============================================================================
+
+## World-space position -> the chunk coordinate containing it.
+func _world_pos_to_chunk_coord(pos: Vector3) -> Vector2i:
+	return Vector2i(floori(pos.x / Chunk.CHUNK_SIZE), floori(pos.z / Chunk.CHUNK_SIZE))
+
+## Chunk coordinate -> the world-space position of its center.
+func _chunk_center_world(coord: Vector2i) -> Vector3:
+	return Vector3((coord.x + 0.5) * Chunk.CHUNK_SIZE, 0.0, (coord.y + 0.5) * Chunk.CHUNK_SIZE)
+
+## Generates every chunk within CHUNK_LOAD_RADIUS of `around_world_pos` that
+## isn't already loaded. Cheap to call repeatedly -- a no-op dictionary
+## lookup for every chunk that already exists, real generation work only
+## for genuinely new ones.
+func _ensure_chunks_loaded(around_world_pos: Vector3) -> void:
+	var center_coord := _world_pos_to_chunk_coord(around_world_pos)
+	for dy in range(-CHUNK_LOAD_RADIUS, CHUNK_LOAD_RADIUS + 1):
+		for dx in range(-CHUNK_LOAD_RADIUS, CHUNK_LOAD_RADIUS + 1):
+			var coord := center_coord + Vector2i(dx, dy)
+			if not _loaded_chunks.has(coord):
+				_generate_chunk(coord)
+
+## Instantiates, positions, and generates the chunk at `coord`, picking its
+## biome from its world-space center (see Biomes.biome_for_world_pos).
+func _generate_chunk(coord: Vector2i) -> void:
+	var center := _chunk_center_world(coord)
+	var biome := Biomes.biome_for_world_pos(center)
+	var chunk := Chunk.new()
+	add_child(chunk)
+	chunk.position = center
+	chunk.generate(coord, biome)
+	_loaded_chunks[coord] = chunk
+
+
+# ============================================================================
+# PATHING GRID -- grid-based A* (AStarGrid2D) so blobs/enemies route around
+# walls/buildings/extractors/processors instead of only locally jittering
+# against them (see Blob._compute_path / _advance_along_path). Belts stay
+# walkable, matching their existing "low structures, not obstacles" design.
+# ============================================================================
+
+## Builds the pathing grid as one big walkable plane; individual cells go
+## solid as blocking structures are placed (see _mark_pathing_cell).
+func _setup_pathing_grid() -> void:
+	var half := int(PATHING_GRID_HALF_SIZE / GRID_CELL_SIZE)
+	_pathing_grid.region = Rect2i(-half, -half, half * 2, half * 2)
+	_pathing_grid.cell_size = Vector2(GRID_CELL_SIZE, GRID_CELL_SIZE)
+	_pathing_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ALWAYS
+	_pathing_grid.update()
+
+## Marks `cell` solid/clear in the pathing grid, e.g. when a wall/building
+## is placed or demolished. No-ops silently if `cell` falls outside the
+## grid's bounds (some structure placed right at the edge of reach).
+func _mark_pathing_cell(cell: Vector2i, solid: bool) -> void:
+	if _pathing_grid.is_in_boundsv(cell):
+		_pathing_grid.set_point_solid(cell, solid)
+
+## Whether `kind_id` should block pathing at all -- every placeable kind
+## does except belts, which are deliberately walkable (blobs cross them
+## like any other patch of ground rather than routing around).
+func _kind_blocks_movement(kind_id: String) -> bool:
+	return kind_id != "belt"
+
+## Computes a waypoint path (world positions) from `from` to `to` around
+## any solid pathing cells in the way, or an empty array if the straight
+## line between them is already clear -- callers should just walk directly
+## toward `to` in that case rather than hopping through unnecessary
+## grid-cell waypoints, keeping normal unobstructed movement smooth instead
+## of visibly grid-snapped. Returns an empty array (meaning "just go
+## straight and hope for the best") if `to` itself is out of bounds/solid,
+## or if no path exists at all -- Blob's existing stall-detector/detour
+## system is still there as a fallback for whatever this can't resolve.
+func compute_path(from: Vector3, to: Vector3) -> Array:
+	if _has_clear_line(from, to):
+		return []
+	var from_cell := world_to_grid(from)
+	var to_cell := world_to_grid(to)
+	if not _pathing_grid.is_in_boundsv(from_cell) or not _pathing_grid.is_in_boundsv(to_cell):
+		return []
+	if _pathing_grid.is_point_solid(to_cell):
+		return []
+	var cell_path: Array = _pathing_grid.get_id_path(from_cell, to_cell)
+	var waypoints: Array = []
+	for cell in cell_path:
+		waypoints.append(grid_to_world(cell))
+	return waypoints
+
+## Samples points along the straight line from `from` to `to` and checks
+## whether any of them fall in a solid pathing cell -- used to skip
+## grid-based pathing entirely for the common case where nothing's in the way.
+func _has_clear_line(from: Vector3, to: Vector3) -> bool:
+	var dist := from.distance_to(to)
+	var steps := maxi(1, ceili(dist / (GRID_CELL_SIZE * 0.5)))
+	for i in range(steps + 1):
+		var t := float(i) / float(steps)
+		var p := from.lerp(to, t)
+		var cell := world_to_grid(p)
+		if _pathing_grid.is_in_boundsv(cell) and _pathing_grid.is_point_solid(cell):
+			return false
+	return true
 
 ## Central input router: while build mode is active, every input goes to
 ## the placement system instead (see _handle_build_input). Otherwise: left
@@ -206,6 +466,27 @@ func _unhandled_input(event: InputEvent) -> void:
 			selection_box.show_rect(_drag_start, event.position)
 		else:
 			_update_hover(event.position)
+	elif event is InputEventKey and event.pressed and not event.echo:
+		_handle_order_key(event.keycode)
+
+## Handles the standing-order keyboard shortcuts (P/H/X), no-ops if nothing
+## is selected. P arms "pending patrol" (see _handle_right_click for the
+## follow-up click that completes it); H and X take effect immediately,
+## each blob using its own current position as the order's anchor point.
+func _handle_order_key(keycode: int) -> void:
+	if selected_blobs.is_empty():
+		return
+	match keycode:
+		KEY_P:
+			_pending_patrol = true
+			var origin: Vector3 = selected_blobs[0].global_position
+			Effects.spawn_floating_text(self, origin + Vector3(0.0, 1.6, 0.0), "Patrol: right-click far point", COLOR_PATROL)
+		KEY_H:
+			for blob in selected_blobs:
+				blob.command_hold()
+		KEY_X:
+			for blob in selected_blobs:
+				blob.command_explore()
 
 ## Fires a physics ray from the camera through the given screen position and
 ## returns the first hit whose collision layer matches `mask` (empty
@@ -220,27 +501,44 @@ func _raycast(screen_pos: Vector2, mask: int) -> Dictionary:
 	return get_world_3d().direct_space_state.intersect_ray(query)
 
 ## Handles a plain (non-drag) left click: selects a blob if one was clicked,
-## opens the building's upgrade menu if the building was clicked, or clears
-## the selection if empty ground was clicked (unless shift/additive is held,
-## in which case an empty click does nothing).
+## opens the generic building info modal if a building was clicked, opens
+## the resource info modal if a resource node was clicked, or clears the
+## selection if empty ground was clicked (unless shift/additive is held, in
+## which case an empty click does nothing).
 func _handle_click_select(pos: Vector2, additive: bool) -> void:
 	var hit := _raycast(pos, MASK_BLOBS)
 	if hit and hit.collider.is_in_group("blobs"):
 		if not additive:
 			_clear_selection()
 		_select_blob(hit.collider)
-		hud.set_selected_count(selected_blobs.size())
+		_selection_changed()
 		return
 
-	var building_hit := _raycast(pos, MASK_RESOURCES)
-	var building_owner = building_hit.collider.get_parent() if building_hit else null
-	if building_owner and building_owner.is_in_group("buildings"):
-		building_menu.open_menu()
-		return
+	var resource_hit := _raycast(pos, MASK_RESOURCES)
+	if resource_hit:
+		var building_owner := _find_building_owner(resource_hit.collider)
+		if building_owner:
+			building_menu.open_menu(building_owner)
+			return
+		if resource_hit.collider.is_in_group("resource_nodes"):
+			resource_info_panel.open_for(resource_hit.collider)
+			return
 
 	if not additive:
 		_clear_selection()
-	hud.set_selected_count(selected_blobs.size())
+	_selection_changed()
+
+## A clicked collider might *be* the building itself (StorageDepot/Wall,
+## which attach their script directly to a root StaticBody3D) or might be
+## a nested collision body whose *parent* is the building (Building.tscn's
+## "Solid" child) -- checks both, returning null if neither applies.
+func _find_building_owner(collider: Node) -> Node:
+	if collider.is_in_group("buildings"):
+		return collider
+	var parent := collider.get_parent()
+	if parent and parent.is_in_group("buildings"):
+		return parent
+	return null
 
 ## Handles a left-click drag: selects every blob whose on-screen projected
 ## position falls inside the dragged rectangle (skipping any blob currently
@@ -256,7 +554,7 @@ func _handle_box_select(a: Vector2, b: Vector2, additive: bool) -> void:
 		var screen_pos := camera.unproject_position(blob.global_position)
 		if rect.has_point(screen_pos):
 			_select_blob(blob)
-	hud.set_selected_count(selected_blobs.size())
+	_selection_changed()
 
 ## Updates which blob (if any) is under the mouse cursor and toggles its
 ## hover highlight, clearing the previous hover target first. Only called
@@ -279,11 +577,20 @@ func _update_hover(pos: Vector2) -> void:
 func _handle_right_click(pos: Vector2) -> void:
 	# A selected blob may have died (enemy combat) since it was selected;
 	# drop any stale references before issuing commands to the selection.
+	var prior_count := selected_blobs.size()
 	selected_blobs = selected_blobs.filter(is_instance_valid)
+	if selected_blobs.size() != prior_count:
+		_selection_changed()
 	if selected_blobs.is_empty():
 		return
 	var hit := _raycast(pos, MASK_RESOURCES | MASK_GROUND)
 	if not hit:
+		return
+	if _pending_patrol:
+		_pending_patrol = false
+		for blob in selected_blobs:
+			blob.command_patrol(hit.position)
+		Effects.spawn_command_marker(self, hit.position + Vector3(0.0, 0.05, 0.0), COLOR_PATROL)
 		return
 	if hit.collider.is_in_group("resource_nodes"):
 		_issue_harvest_orders(hit.collider)
@@ -351,6 +658,19 @@ func _clear_selection() -> void:
 			blob.set_selected(false)
 	selected_blobs.clear()
 
+## Called after anything that adds/removes/prunes the selection: updates
+## the HUD's count and shows/hides the unit-info panel to match. A single
+## selected blob gets the detailed stats/inventory view; multiple get a
+## compact per-kind grouped overview instead of hiding the panel entirely.
+func _selection_changed() -> void:
+	hud.set_selected_count(selected_blobs.size())
+	if selected_blobs.is_empty():
+		unit_info_panel.hide_panel()
+	elif selected_blobs.size() == 1 and is_instance_valid(selected_blobs[0]):
+		unit_info_panel.show_blob(selected_blobs[0])
+	else:
+		unit_info_panel.show_group(selected_blobs)
+
 
 # ============================================================================
 # BUILD MODE -- placing extractors, processors, and conveyor belts on a grid.
@@ -388,8 +708,11 @@ func _toggle_build_mode() -> void:
 	build_palette.set_active(_build_mode_active)
 	if _build_mode_active:
 		build_palette.set_selected_kind(_build_selected_kind)
+		if _build_selected_kind == "extractor":
+			_show_extractor_range_indicators()
 	else:
 		_clear_ghost()
+		_clear_extractor_range_indicators()
 
 ## Signal handler for BuildPalette.kind_selected: switches which structure
 ## the next placement will be.
@@ -397,10 +720,45 @@ func _on_build_kind_selected(kind_id: String) -> void:
 	_build_selected_kind = kind_id
 	build_palette.set_selected_kind(kind_id)
 	_update_ghost_validity()
+	if kind_id == "extractor":
+		_show_extractor_range_indicators()
+	else:
+		_clear_extractor_range_indicators()
+
+## Spawns a translucent green disc over every resource node, sized to
+## EXTRACTOR_LINK_RADIUS, so the player can see at a glance where an
+## extractor can legally be linked instead of trial-and-error placement.
+func _show_extractor_range_indicators() -> void:
+	_clear_extractor_range_indicators()
+	for n in get_tree().get_nodes_in_group("resource_nodes"):
+		var indicator := MeshInstance3D.new()
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = EXTRACTOR_LINK_RADIUS
+		mesh.bottom_radius = EXTRACTOR_LINK_RADIUS
+		mesh.height = 0.04
+		var mat := StandardMaterial3D.new()
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = Color(0.3, 1.0, 0.5, 0.16)
+		mesh.material = mat
+		indicator.mesh = mesh
+		add_child(indicator)
+		indicator.global_position = n.global_position + Vector3(0.0, 0.03, 0.0)
+		_extractor_range_indicators.append(indicator)
+
+## Removes every extractor-range indicator, e.g. when switching to a
+## different build kind or leaving build mode entirely.
+func _clear_extractor_range_indicators() -> void:
+	for indicator in _extractor_range_indicators:
+		if is_instance_valid(indicator):
+			indicator.queue_free()
+	_extractor_range_indicators.clear()
 
 ## Routes all input while build mode is active: mouse movement re-positions
-## the ghost, left click places, right click or 'R' rotates the ghost 90
-## degrees, and Escape exits build mode entirely.
+## the ghost, left click places whatever's selected in the palette, right
+## click demolishes whatever structure is under the ghost cell (regardless
+## of which kind is currently selected for placement), 'R' rotates the
+## ghost 90 degrees, and Escape exits build mode entirely.
 func _handle_build_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		_update_ghost_position(event.position)
@@ -408,7 +766,7 @@ func _handle_build_input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_try_place_structure()
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			_rotate_ghost()
+			_demolish_at(_build_ghost_cell)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_R:
 			_rotate_ghost()
@@ -476,17 +834,42 @@ func _update_ghost_validity() -> void:
 	var valid := _is_placement_valid(_build_ghost_cell)
 	_build_ghost_material.albedo_color = GHOST_VALID_COLOR if valid else GHOST_INVALID_COLOR
 
-## Whether `cell` is free to place the currently-selected structure kind:
-## must be unoccupied, clear of the building's own footprint, and -- for an
-## extractor specifically -- within linking range of an actual resource node.
+## Whether `cell` is a valid target for the currently-selected build kind.
+## Every kind (building or factory piece) occupies exactly its own single
+## cell -- a building's input/output ports are directions to its
+## *neighboring* cells (where a belt goes), not extra cells the building
+## itself claims, same as how an Extractor/Processor's single output side
+## works with a belt sitting next to it, not inside it. A building kind
+## must also be unlocked; an extractor must be within linking range of an
+## actual resource node. (Demolishing is a right-click, handled separately
+## in _handle_build_input -- it isn't a selectable placement kind.)
 func _is_placement_valid(cell: Vector2i) -> bool:
-	if get_structure_at(cell) != null:
+	var building_kind = BuildingKinds.get_kind(_build_selected_kind)
+	if building_kind and not GameManager.is_building_unlocked(_build_selected_kind):
 		return false
-	if grid_to_world(cell).length() < BUILDING_SAFE_RADIUS * 0.6:
+
+	if get_structure_at(cell) != null:
 		return false
 	if _build_selected_kind == "extractor":
 		return _find_resource_node_near(grid_to_world(cell)) != null
 	return true
+
+## Every grid cell `kind_id` occupies if placed with its anchor at `anchor`
+## -- always just the anchor itself; a building's ports describe directions
+## to its neighboring cells, not additional cells it claims (see
+## _is_placement_valid). Kept as its own helper (rather than inlining
+## `[anchor]`) so demolish/placement code reads the same way regardless of
+## kind, and so a genuinely multi-cell building could extend this later.
+func _get_footprint_cells(_kind_id: String, anchor: Vector2i) -> Array:
+	return [anchor]
+
+## Wood cost of placing `kind_id`, whether it's a building kind (cost lives
+## on its BuildingKinds entry) or a factory piece (cost lives in BUILD_COSTS).
+func _get_build_cost(kind_id: String) -> int:
+	var building_kind = BuildingKinds.get_kind(kind_id)
+	if building_kind:
+		return building_kind.build_cost
+	return BUILD_COSTS.get(kind_id, 0)
 
 ## Closest resource node within EXTRACTOR_LINK_RADIUS of `pos`, or null.
 func _find_resource_node_near(pos: Vector3) -> Node:
@@ -499,37 +882,101 @@ func _find_resource_node_near(pos: Vector3) -> Node:
 			nearest = n
 	return nearest
 
-## Attempts to place the currently-selected structure kind at the ghost's
-## cell: validates placement, spends the wood cost, instantiates and
-## orients the real structure, and registers it on the grid. Silently does
-## nothing if the placement is invalid or unaffordable -- the ghost's color
-## already told the player which case they're in.
+## Attempts to place the currently-selected build kind at the ghost's cell:
+## validates placement, spends the wood cost, instantiates and orients the
+## real structure, and registers it on the grid. Silently does nothing if
+## the action is invalid or unaffordable -- the ghost's color already told
+## the player which case they're in. (Demolishing is a separate right-click
+## action, see _demolish_at.)
 func _try_place_structure() -> void:
 	if not _is_placement_valid(_build_ghost_cell):
 		return
-	var cost: int = BUILD_COSTS.get(_build_selected_kind, 0)
+	var cost := _get_build_cost(_build_selected_kind)
 	if not GameManager.try_spend_wood(cost):
 		return
 
 	var node: Node3D = _instantiate_structure(_build_selected_kind)
-	node.facing = _build_facing
+	# Buildings don't rotate to face a placement direction (their ports are
+	# fixed world-relative offsets, see BuildingKinds) -- only factory
+	# pieces expose a `facing` property, so this is skipped for them.
+	if "facing" in node:
+		node.facing = _build_facing
+	if "kind_id" in node:
+		node.kind_id = _build_selected_kind
 	add_child(node)
 	node.global_position = grid_to_world(_build_ghost_cell)
-	node.look_at(node.global_position + Vector3(_build_facing.x, 0.0, _build_facing.y), Vector3.UP)
-	register_structure(_build_ghost_cell, node)
+	if "facing" in node:
+		node.look_at(node.global_position + Vector3(_build_facing.x, 0.0, _build_facing.y), Vector3.UP)
+
+	var footprint := _get_footprint_cells(_build_selected_kind, _build_ghost_cell)
+	for cell in footprint:
+		register_structure(cell, node)
+		if _kind_blocks_movement(_build_selected_kind):
+			_mark_pathing_cell(cell, true)
+	node.set_meta("build_kind", _build_selected_kind)
+	node.set_meta("occupied_cells", footprint)
 
 	if _build_selected_kind == "extractor":
 		node.linked_node = _find_resource_node_near(node.global_position)
 
+	_refresh_neighbor_visuals(_build_ghost_cell)
 	_update_ghost_validity()
 
-## Instantiates (but does not yet place) the scene for `kind`.
+## Removes whatever structure occupies `cell` (a right-click in build mode,
+## regardless of which kind is currently selected for placement), refunding
+## half its original wood cost, freeing any item it was holding (a belt's
+## current_item) rather than leaving it orphaned on the grid, clearing
+## every grid cell it occupied (not just `cell` itself -- a building spans
+## multiple cells, see _get_footprint_cells) and re-opening any pathing
+## cells it had closed off. No-ops if `cell` is empty.
+func _demolish_at(cell: Vector2i) -> void:
+	var structure := get_structure_at(cell)
+	if structure == null:
+		return
+	if "current_item" in structure and structure.current_item:
+		structure.current_item.queue_free()
+	var occupied: Array = structure.get_meta("occupied_cells", [cell])
+	var kind: String = structure.get_meta("build_kind", "belt")
+	for occupied_cell in occupied:
+		_grid_structures.erase(occupied_cell)
+		if _kind_blocks_movement(kind):
+			_mark_pathing_cell(occupied_cell, false)
+	var refund: int = _get_build_cost(kind) / 2
+	if refund > 0:
+		GameManager.add_resource("wood", refund)
+	structure.queue_free()
+	_refresh_neighbor_visuals(cell)
+	_update_ghost_validity()
+
+## Asks the structure at `cell` and every structure in the 4 cells around it
+## (belts only actually respond -- see BeltSegment.refresh_connections) to
+## re-check their neighbors and update which of their side walls are open,
+## so a belt chain visually reacts immediately when a new piece is placed
+## next to it or an existing one is removed, without needing a full-grid
+## rescan. `cell` itself needs this too, not just its neighbors -- a belt's
+## _ready() can't do its own initial check (see BeltSegment._ready), since
+## World sets its real position/rotation only *after* add_child().
+func _refresh_neighbor_visuals(cell: Vector2i) -> void:
+	var offsets := [Vector2i.ZERO, Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	for offset in offsets:
+		var neighbor := get_structure_at(cell + offset)
+		if neighbor and neighbor.has_method("refresh_connections"):
+			neighbor.refresh_connections()
+
+## Instantiates (but does not yet place) the scene for `kind` -- a building
+## kind's scene comes from its BuildingKinds entry, a factory piece's from
+## World's own preloaded scenes.
 func _instantiate_structure(kind: String) -> Node3D:
+	var building_kind = BuildingKinds.get_kind(kind)
+	if building_kind:
+		return building_kind.scene.instantiate()
 	match kind:
 		"extractor":
 			return EXTRACTOR_SCENE.instantiate()
 		"processor":
 			return PROCESSOR_SCENE.instantiate()
+		"wall":
+			return WALL_SCENE.instantiate()
 		_:
 			return BELT_SCENE.instantiate()
 

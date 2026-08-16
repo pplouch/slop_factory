@@ -29,3 +29,10 @@ func physics_update(blob: CharacterBody3D, _delta: float) -> BlobState:
 
 	blob.pending_harvest_node = null
 	return IdleState.new()
+
+## "Moving to harvest" if this leg of the trip ends at a resource node,
+## otherwise a plain "Moving" (a direct move order with nothing queued up).
+func display_name(blob: CharacterBody3D) -> String:
+	if is_instance_valid(blob.pending_harvest_node):
+		return "Moving to harvest"
+	return "Moving"

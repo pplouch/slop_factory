@@ -3,6 +3,16 @@ extends CanvasLayer
 ## that appears next to it once build mode is active. Purely a view: it
 ## reports button presses via signals and lets World tell it what to show
 ## (World owns all placement logic, grid state, and cost/validity checks).
+##
+## Factory pieces (extractor/processor/belt) are fixed buttons always
+## shown. Building kinds (Town Hall, Storage Depot, ...) are built
+## dynamically from BuildingKinds and only shown once GameManager reports
+## them unlocked -- see _refresh_building_buttons, re-run whenever
+## GameManager.building_unlocked fires so a freshly-unlocked building
+## appears immediately without reopening anything.
+##
+## Demolishing isn't a palette selection at all -- it's a right-click on an
+## existing structure while build mode is active (see World._demolish_at).
 
 signal toggle_requested
 signal kind_selected(kind_id: String)
@@ -12,19 +22,43 @@ signal kind_selected(kind_id: String)
 @onready var extractor_button: Button = $PalettePanel/VBox/ExtractorButton
 @onready var processor_button: Button = $PalettePanel/VBox/ProcessorButton
 @onready var belt_button: Button = $PalettePanel/VBox/BeltButton
+@onready var wall_button: Button = $PalettePanel/VBox/WallButton
+@onready var buildings_container: VBoxContainer = $PalettePanel/VBox/BuildingsContainer
 
 const SELECTED_TINT := Color(1.0, 0.92, 0.5)
 const NORMAL_TINT := Color(1, 1, 1)
 
+var _building_buttons: Dictionary = {}
 
-## Godot lifecycle hook: starts with the palette collapsed and wires each
-## button to emit its corresponding signal.
+
+## Godot lifecycle hook: starts with the palette collapsed, wires each fixed
+## button to emit its corresponding signal, builds one (initially hidden)
+## button per building kind, and subscribes to unlock changes.
 func _ready() -> void:
 	palette_panel.visible = false
 	toggle_button.pressed.connect(func(): toggle_requested.emit())
 	extractor_button.pressed.connect(func(): kind_selected.emit("extractor"))
 	processor_button.pressed.connect(func(): kind_selected.emit("processor"))
 	belt_button.pressed.connect(func(): kind_selected.emit("belt"))
+	wall_button.pressed.connect(func(): kind_selected.emit("wall"))
+	_build_building_buttons()
+	GameManager.building_unlocked.connect(func(_id): _refresh_building_buttons())
+	_refresh_building_buttons()
+
+## Creates one button per BuildingKinds entry (hidden until unlocked).
+func _build_building_buttons() -> void:
+	for building_id in BuildingKinds.get_ordered_ids():
+		var kind = BuildingKinds.get_kind(building_id)
+		var button := Button.new()
+		button.text = "%s (%d wood)" % [kind.display_name, kind.build_cost]
+		button.pressed.connect(func(): kind_selected.emit(building_id))
+		buildings_container.add_child(button)
+		_building_buttons[building_id] = button
+
+## Shows/hides each building button to match current unlock state.
+func _refresh_building_buttons() -> void:
+	for building_id in _building_buttons.keys():
+		_building_buttons[building_id].visible = GameManager.is_building_unlocked(building_id)
 
 ## Shows/hides the structure palette and relabels the toggle button to
 ## reflect the current build-mode state.
@@ -38,3 +72,6 @@ func set_selected_kind(kind_id: String) -> void:
 	extractor_button.modulate = SELECTED_TINT if kind_id == "extractor" else NORMAL_TINT
 	processor_button.modulate = SELECTED_TINT if kind_id == "processor" else NORMAL_TINT
 	belt_button.modulate = SELECTED_TINT if kind_id == "belt" else NORMAL_TINT
+	wall_button.modulate = SELECTED_TINT if kind_id == "wall" else NORMAL_TINT
+	for building_id in _building_buttons.keys():
+		_building_buttons[building_id].modulate = SELECTED_TINT if kind_id == building_id else NORMAL_TINT

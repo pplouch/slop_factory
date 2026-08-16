@@ -48,7 +48,7 @@ func _on_extract_timer_timeout() -> void:
 
 	var output_pos := global_position + Vector3(facing.x, 0.0, facing.y) * (CELL_SIZE * 0.5)
 	var item := Effects.spawn_resource_item(get_parent(), output_pos, linked_node.resource_type, taken)
-	if not output_structure.try_receive_input(item):
+	if not output_structure.try_receive_input(item, facing):
 		# Belt was free a moment ago but got claimed by something else this
 		# frame; a rare race, not worth more machinery to avoid -- the
 		# harvested amount is simply lost this tick.

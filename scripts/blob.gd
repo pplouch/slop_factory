@@ -88,6 +88,14 @@ var final_target: Vector3 = Vector3.ZERO
 ## The resource node this blob is walking to / currently harvesting, if any.
 var pending_harvest_node: Node = null
 
+## Remaining grid-cell waypoints (world positions) between here and
+## final_target, computed by World's pathing grid when the direct line is
+## blocked (see _set_destination/_advance_along_path). Empty means "just
+## walk straight at move_target" -- either no obstruction was found, or no
+## path exists and the stall-detector is the fallback.
+var path_queue: Array = []
+const WAYPOINT_ARRIVE_DISTANCE := 0.5
+
 var _approach_angle: float = 0.0
 var _detour_timer: float = 0.0
 var _progress_check_timer: float = 0.0
@@ -102,6 +110,7 @@ var _hovered := false
 ## Godot lifecycle hook: wires up the blob's group membership, cosmetics,
 ## starting stats/health and state, then starts its idle breathing animation.
 func _ready() -> void:
+	super._ready()
 	add_to_group("blobs")
 	_apply_kind_look()
 	_ring_material = selection_ring.mesh.material.duplicate()
@@ -109,6 +118,7 @@ func _ready() -> void:
 	_refresh_stats()
 	health = max_health
 	GameManager.upgrade_changed.connect(_on_upgrade_changed)
+	GameManager.colony_supply_changed.connect(_refresh_stats)
 	_transition_to(IdleState.new())
 	_start_idle_bob()
 
@@ -127,14 +137,18 @@ func _on_upgrade_changed(_stat: String, _level: int) -> void:
 	_refresh_stats()
 
 ## Recomputes every stat (including combat ones) from GameManager's current
-## upgrade levels layered with this blob's kind multipliers. Called on
-## startup and whenever an upgrade is purchased. Health is clamped rather
-## than reset, so a purchase never fully heals a hurt blob as a side effect.
+## upgrade levels layered with this blob's kind multipliers and the
+## colony's current food/water status (see
+## GameManager.get_starvation_speed_multiplier -- a starving/dehydrated
+## colony works slower and harvests less until resupplied). Called on
+## startup, whenever an upgrade is purchased, and whenever the colony's
+## starving/dehydrated status flips. Health is clamped rather than reset,
+## so a refresh never fully heals a hurt blob as a side effect.
 func _refresh_stats() -> void:
 	var kind := BlobKinds.get_kind(kind_id)
-	speed = BASE_SPEED * GameManager.get_speed_multiplier() * kind.speed_mult
+	speed = BASE_SPEED * GameManager.get_speed_multiplier() * kind.speed_mult * GameManager.get_starvation_speed_multiplier()
 	carry_capacity = max(1, int(round((BASE_CARRY_CAPACITY + GameManager.get_capacity_bonus()) * kind.capacity_mult)))
-	harvest_amount = max(1, int(round(BASE_HARVEST_AMOUNT * GameManager.get_strength_multiplier() * kind.harvest_mult)))
+	harvest_amount = max(1, int(round(BASE_HARVEST_AMOUNT * GameManager.get_strength_multiplier() * kind.harvest_mult * GameManager.get_starvation_harvest_multiplier())))
 	harvest_interval = BASE_HARVEST_INTERVAL / GameManager.get_efficiency_multiplier()
 
 	attack_power = BASE_ATTACK_POWER * GameManager.get_strength_multiplier() * kind.harvest_mult
@@ -210,6 +224,30 @@ func command_harvest(node: Node, approach_angle: float = -1.0) -> void:
 	_transition_to(MovingState.new())
 	_acknowledge_order()
 
+## Player order: patrol back and forth between wherever this blob is
+## standing right now and `point_b`, forever, until a fresh order overrides
+## it (see PatrolState).
+func command_patrol(point_b: Vector3) -> void:
+	pending_harvest_node = null
+	_transition_to(PatrolState.new(global_position, point_b))
+	_acknowledge_order()
+
+## Player order: hold position where this blob is standing right now,
+## actively engaging anything that comes within HoldState.DETECTION_RADIUS
+## and returning here once the area's clear (see HoldState).
+func command_hold() -> void:
+	pending_harvest_node = null
+	_transition_to(HoldState.new(global_position))
+	_acknowledge_order()
+
+## Player order: wander randomly within ExploreState.EXPLORE_RADIUS of
+## wherever this blob is standing right now, forever, until a fresh order
+## overrides it (see ExploreState).
+func command_explore() -> void:
+	pending_harvest_node = null
+	_transition_to(ExploreState.new(global_position))
+	_acknowledge_order()
+
 ## Switches the state machine to `next_state`, calling exit/enter hooks on
 ## the outgoing/incoming states so they can do one-time setup/teardown.
 func _transition_to(next_state: BlobState) -> void:
@@ -218,16 +256,32 @@ func _transition_to(next_state: BlobState) -> void:
 	current_state = next_state
 	current_state.enter(self)
 
-## Points the blob at a new destination and resets everything the
-## stall-detector uses to measure "am I making progress", so a fresh order
-## never inherits stale progress-tracking state from the previous one.
+## Points the blob at a new destination, routing around any walls/
+## buildings in the way via World's pathing grid (see
+## World.compute_path), and resets everything the stall-detector uses to
+## measure "am I making progress", so a fresh order never inherits stale
+## progress-tracking state from the previous one.
 func _set_destination(target: Vector3) -> void:
 	final_target = target
-	move_target = target
+	var world = get_parent()
+	path_queue = world.compute_path(global_position, target) if world and world.has_method("compute_path") else []
+	move_target = path_queue[0] if not path_queue.is_empty() else target
 	_detour_timer = 0.0
 	_stall_strikes = 0
 	_progress_check_timer = 0.0
 	_progress_check_origin = global_position
+
+## Advances path_queue once the current waypoint (move_target) has been
+## reached, so every state that walks toward move_target (Moving, Patrol,
+## Hold, Explore, Returning) automatically follows a routed path without
+## needing to know pathing exists at all. Called every physics frame
+## regardless of state, same as _update_stall_detection/_update_combat.
+func _advance_along_path() -> void:
+	if path_queue.is_empty():
+		return
+	if global_position.distance_to(move_target) < WAYPOINT_ARRIVE_DISTANCE:
+		path_queue.pop_front()
+		move_target = path_queue[0] if not path_queue.is_empty() else final_target
 
 ## Picks a point `APPROACH_RADIUS` from `target` at `angle` (plus a small
 ## random jitter so a group of blobs doesn't look perfectly geometric),
@@ -245,12 +299,14 @@ func _acknowledge_order() -> void:
 	var tween := create_tween()
 	tween.tween_property(body_mesh, "scale", Vector3(1, 0.85, 1), 0.25) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	Effects.play_chirp(get_parent(), global_position + Vector3(0.0, 0.6, 0.0))
 
 ## Godot physics tick: delegates all state-specific behavior to
 ## `current_state`, then runs the bookkeeping that applies regardless of
 ## state (actually moving the physics body, keeping it pinned to the
 ## ground plane, watching for stalls, and defending against nearby enemies).
 func _physics_process(delta: float) -> void:
+	_advance_along_path()
 	var next_state := current_state.physics_update(self, delta)
 	if next_state:
 		_transition_to(next_state)
@@ -367,6 +423,7 @@ func _collect(resource_type: String, amount: int, source_pos: Vector3) -> void:
 	var text_pos := global_position + Vector3(randf_range(-0.15, 0.15), 1.15, randf_range(-0.15, 0.15))
 	Effects.spawn_floating_text(get_parent(), text_pos, "+%d" % amount, color)
 	Effects.spawn_impact(get_parent(), source_pos + Vector3(0.0, 0.6, 0.0), color, 6)
+	Effects.play_chirp(get_parent(), global_position + Vector3(0.0, 0.6, 0.0), 0.25)
 
 ## Sum of every resource type currently held, compared against
 ## `carry_capacity` to decide when a blob's inventory is "full".
@@ -399,6 +456,29 @@ func _update_combat(delta: float) -> void:
 			_attack_cooldown = attack_interval
 			enemy.take_damage(attack_power, self)
 	_update_combat_regen(delta)
+
+## Overrides Combatant's default "hit landed" feedback with something more
+## alarming: a blob is *your* unit, so taking damage should read as bad
+## news rather than the neutral/rewarding style used for hurting an enemy.
+## Bigger red text, a bigger red particle burst, and a quick red flash
+## across the body itself so it's unmistakable even at a glance.
+func _show_damage_feedback(amount: float) -> void:
+	var text_pos := global_position + Vector3(randf_range(-0.15, 0.15), 1.4, randf_range(-0.15, 0.15))
+	Effects.spawn_floating_text(get_parent(), text_pos, "-%d" % int(round(amount)), Color(1.0, 0.15, 0.1))
+	Effects.spawn_impact(get_parent(), global_position + Vector3(0.0, 0.6, 0.0), Color(1.0, 0.1, 0.1), 10)
+	_flash_hurt()
+
+## Briefly flashes the body material red and back, reusing the per-instance
+## material _apply_kind_look already duplicated (so this never bleeds into
+## other blobs sharing the base mesh resource).
+func _flash_hurt() -> void:
+	var mat := body_mesh.get_surface_override_material(0)
+	if not mat:
+		return
+	var original_color: Color = mat.albedo_color
+	var tween := create_tween()
+	tween.tween_property(mat, "albedo_color", Color(1.0, 0.15, 0.1), 0.06)
+	tween.tween_property(mat, "albedo_color", original_color, 0.3)
 
 ## Closest member of the "enemies" group within `range`, or null.
 func _find_nearest_enemy_in_range(range_limit: float) -> Node:
