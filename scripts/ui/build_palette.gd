@@ -4,12 +4,14 @@ extends CanvasLayer
 ## reports button presses via signals and lets World tell it what to show
 ## (World owns all placement logic, grid state, and cost/validity checks).
 ##
-## Factory pieces (extractor/processor/belt) are fixed buttons always
-## shown. Building kinds (Town Hall, Storage Depot, ...) are built
-## dynamically from BuildingKinds and only shown once GameManager reports
-## them unlocked -- see _refresh_building_buttons, re-run whenever
-## GameManager.building_unlocked fires so a freshly-unlocked building
-## appears immediately without reopening anything.
+## Extractor/Processor (the only two factory pieces that never joined the
+## tech tree) are fixed buttons always shown. Every BuildingKinds entry --
+## Town Hall, Storage Depot, ..., and now Wall/Belt too, see
+## scripts/core/linkable_building.gd -- is built dynamically from
+## BuildingKinds and only shown once GameManager reports it unlocked -- see
+## _refresh_building_buttons, re-run whenever GameManager.building_unlocked
+## fires so a freshly-unlocked building appears immediately without
+## reopening anything.
 ##
 ## Demolishing isn't a palette selection at all -- it's a right-click on an
 ## existing structure while build mode is active (see World._demolish_at).
@@ -21,8 +23,6 @@ signal kind_selected(kind_id: String)
 @onready var palette_panel: PanelContainer = $PalettePanel
 @onready var extractor_button: Button = $PalettePanel/VBox/ExtractorButton
 @onready var processor_button: Button = $PalettePanel/VBox/ProcessorButton
-@onready var belt_button: Button = $PalettePanel/VBox/BeltButton
-@onready var wall_button: Button = $PalettePanel/VBox/WallButton
 @onready var buildings_container: VBoxContainer = $PalettePanel/VBox/BuildingsContainer
 
 const SELECTED_TINT := Color(1.0, 0.92, 0.5)
@@ -39,8 +39,6 @@ func _ready() -> void:
 	toggle_button.pressed.connect(func(): toggle_requested.emit())
 	extractor_button.pressed.connect(func(): kind_selected.emit("extractor"))
 	processor_button.pressed.connect(func(): kind_selected.emit("processor"))
-	belt_button.pressed.connect(func(): kind_selected.emit("belt"))
-	wall_button.pressed.connect(func(): kind_selected.emit("wall"))
 	_build_building_buttons()
 	GameManager.building_unlocked.connect(func(_id): _refresh_building_buttons())
 	_refresh_building_buttons()
@@ -71,7 +69,5 @@ func set_active(active: bool) -> void:
 func set_selected_kind(kind_id: String) -> void:
 	extractor_button.modulate = SELECTED_TINT if kind_id == "extractor" else NORMAL_TINT
 	processor_button.modulate = SELECTED_TINT if kind_id == "processor" else NORMAL_TINT
-	belt_button.modulate = SELECTED_TINT if kind_id == "belt" else NORMAL_TINT
-	wall_button.modulate = SELECTED_TINT if kind_id == "wall" else NORMAL_TINT
 	for building_id in _building_buttons.keys():
 		_building_buttons[building_id].modulate = SELECTED_TINT if kind_id == building_id else NORMAL_TINT

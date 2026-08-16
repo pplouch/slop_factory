@@ -22,6 +22,10 @@ var _buffer: Array = []
 
 @onready var _tank_mesh: MeshInstance3D = $Tank
 @onready var _tank_base_position: Vector3 = _tank_mesh.position
+@onready var _input_marker_mesh: MeshInstance3D = $InputMarker
+@onready var _input_marker_base_position: Vector3 = _input_marker_mesh.position
+@onready var _output_marker_mesh: MeshInstance3D = $OutputMarker
+@onready var _output_marker_base_position: Vector3 = _output_marker_mesh.position
 
 
 func _ready() -> void:
@@ -36,9 +40,15 @@ func get_info_text() -> String:
 	return "Stores: water only\nBuffer: %d/%d" % [_buffer.size(), _max_buffer()]
 
 ## Template Method hook (see BuildableStructure._apply_construction_visual):
-## a single mesh that both scales and repositions as it rises.
+## the tank plus both port markers rise together -- a marker left out here
+## would render at full size from placement, misleadingly suggesting the
+## building already works before construction finishes.
 func _construction_meshes() -> Array:
-	return [{"mesh": _tank_mesh, "base_position": _tank_base_position}]
+	return [
+		{"mesh": _tank_mesh, "base_position": _tank_base_position},
+		{"mesh": _input_marker_mesh, "base_position": _input_marker_base_position},
+		{"mesh": _output_marker_mesh, "base_position": _output_marker_base_position},
+	]
 
 func _max_buffer() -> int:
 	return BASE_MAX_BUFFER + upgrade_level * BUFFER_BONUS_PER_LEVEL

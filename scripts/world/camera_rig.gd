@@ -12,7 +12,7 @@ extends Node3D
 ## rotate, WASD to pan" on QWERTY and "A/E to rotate, ZQSD to pan" on AZERTY
 ## without any layout-specific branching.
 
-const PAN_SPEED := 26.0
+const PAN_SPEED := 60.0
 const ZOOM_MIN := 0.6
 const ZOOM_MAX := 2.8
 const ZOOM_STEP := 0.1

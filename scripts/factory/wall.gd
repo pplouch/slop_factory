@@ -1,24 +1,24 @@
 class_name Wall
-extends StaticBody3D
+extends LinkableBuilding
 ## A defensive, grid-placed barrier: solid enough to physically block
-## blobs/enemies (see World._kind_blocks_movement and the pathing grid,
+## blobs/enemies (see World._structure_blocks_movement and the pathing grid,
 ## which routes movement around it rather than just locally jittering
 ## against it), and shows a connector bar toward each neighboring cell that
-## also holds a Wall, so a run of walls reads as one continuous fence
-## rather than separate isolated posts -- the same "hide the side that
-## doesn't need it" technique BeltSegment uses, simplified since a Wall
-## never rotates (its local axes are always the world axes, no facing to
-## account for).
+## also holds a Wall, so a run of walls reads as one continuous fence rather
+## than separate isolated posts.
 ##
-## Exposes the same kind_id/display_name/durability shape BuildingMenu
-## reads for its generic "This Building" info section, even though Wall
-## isn't a BuildingKinds entry (no ports, no tech-tree gating -- it's a
-## simple always-available factory-grid piece like belt/extractor/processor).
+## A BuildingKinds entry like Town Hall/StorageDepot/WaterTank (tech-tree
+## gated, requires blob construction labor before it blocks anything) rather
+## than a standalone always-available factory piece -- `kind_id`,
+## `upgrade_level`, `durability`/`max_durability`,
+## `is_under_construction`/`construction_progress`, `add_construction_progress()`,
+## and `try_upgrade()` all come from BuildableStructure via LinkableBuilding
+## (see scripts/core/linkable_building.gd and scripts/core/buildable_structure.gd).
+## Never rotates -- its local axes are always the world axes, no facing to
+## account for, unlike BeltSegment.
 
-var kind_id := "wall"
-var display_name := "Wall"
-var max_durability := 60
-var durability := 60
+@onready var _post_mesh: MeshInstance3D = $Post
+@onready var _post_base_position: Vector3 = _post_mesh.position
 
 @onready var _connectors := {
 	"pos_x": $ConnectorPosX,
@@ -30,22 +30,26 @@ var durability := 60
 
 ## Godot lifecycle hook: joins the same groups a building would (clickable
 ## via World's existing "clicked a building" flow, and covered by
-## DebugMenu's hitbox overlay).
+## DebugMenu's hitbox overlay), sets durability from its BuildingKinds
+## entry, and shows the freshly-placed "just started" construction visual.
 func _ready() -> void:
 	add_to_group("buildings")
 	add_to_group("structures")
-	durability = max_durability
+	_setup_durability()
+	_apply_construction_visual(0.0)
 
-## Re-checks all 4 neighboring grid cells and shows a connector bar toward
-## any of them that's also a Wall. Called by World once this wall's own
-## placement is finalized and whenever a structure is placed/demolished
-## next to it (see World._refresh_neighbor_visuals) -- same timing
-## reasoning as BeltSegment.refresh_connections.
-func refresh_connections() -> void:
-	var world = get_parent()
-	if world == null:
-		return
-	var my_cell: Vector2i = world.world_to_grid(global_position)
-	for key in GridDirections.CARDINAL_OFFSETS.keys():
-		var neighbor: Node = world.get_structure_at(my_cell + GridDirections.CARDINAL_OFFSETS[key])
-		_connectors[key].visible = neighbor is Wall
+## Template Method hook (see BuildableStructure._apply_construction_visual):
+## a single mesh that both scales and repositions as it rises.
+func _construction_meshes() -> Array:
+	return [{"mesh": _post_mesh, "base_position": _post_base_position}]
+
+## Template Method hook (see LinkableBuilding.refresh_connections): a fence
+## should only visually merge into another fence, not an unrelated belt.
+func _links_to(neighbor: Node) -> bool:
+	return neighbor is Wall
+
+## Template Method hook (see LinkableBuilding.refresh_connections): a Wall
+## never rotates, so its connector keys are already world-space cardinal
+## directions -- no local-axis remap needed the way BeltSegment needs.
+func _set_connector_visible(key: String, is_visible: bool) -> void:
+	_connectors[key].visible = is_visible

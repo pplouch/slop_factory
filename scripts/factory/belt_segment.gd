@@ -1,12 +1,26 @@
-extends Node3D
+class_name BeltSegment
+extends LinkableBuilding
 ## One grid-cell conveyor segment: carries at most one ResourceItem at a
 ## time from its back edge to its front edge (in `facing` direction), then
 ## pushes it onward to whatever sits in the next grid cell -- another belt,
 ## a Processor's input, or (if that cell is empty) straight into
 ## GameManager's stockpile, since there's nowhere further to send it.
 ##
-## Deliberately no physics body: belts are low structures blobs should walk
-## straight over, not obstacles to route around.
+## A BuildingKinds entry like Town Hall/StorageDepot/WaterTank (tech-tree
+## gated, requires blob construction labor before it can carry anything)
+## rather than a standalone always-available factory piece -- `kind_id`,
+## `upgrade_level`, `durability`/`max_durability`,
+## `is_under_construction`/`construction_progress`, `add_construction_progress()`,
+## and `try_upgrade()` all come from BuildableStructure via LinkableBuilding
+## (see scripts/core/linkable_building.gd and scripts/core/buildable_structure.gd).
+##
+## Its root is a StaticBody3D (inherited from BuildableStructure) with
+## `collision_layer = 0` set in belt_segment.tscn -- **required**, not
+## incidental: every other LinkableBuilding/building sits on physics layer 3
+## (Resources), which Blob/Enemy's collision_mask includes, and a belt must
+## stay a zero-footprint structure blobs walk straight over rather than
+## collide with. It's still clickable via the existing `ClickArea` (a
+## non-physics Area3D child, layer 3) rather than the body itself.
 ##
 ## `facing` must be set (by World, at placement time) *before* this node
 ## enters the tree, since its look-at orientation is set at placement using
@@ -18,16 +32,11 @@ const BELT_SPEED := 1.2
 ## Grid direction this belt moves items toward: (1,0)/(-1,0)/(0,1)/(0,-1).
 @export var facing: Vector2i = Vector2i(1, 0)
 
-## Duck-typed for BuildingMenu's generic "This Building" info section (see
-## Wall for the same pattern) -- a belt isn't a BuildingKinds entry, just a
-## plain factory-grid piece, but it's still clickable via its ClickArea.
-var kind_id := "belt"
-var display_name := "Conveyor Belt"
-
 ## The item currently riding this belt, or null if empty.
 var current_item: Node3D = null
 
 @onready var _tile: MeshInstance3D = $Tile
+@onready var _tile_base_position: Vector3 = _tile.position
 @onready var _walls := {
 	"pos_x": $WallPosX,
 	"neg_x": $WallNegX,
@@ -55,9 +64,11 @@ var _progress: float = 0.0
 
 
 ## Godot lifecycle hook: makes this belt discoverable as a hand-off target
-## for its upstream neighbor (via World.get_structure_at). Deliberately
-## does NOT call refresh_connections() here -- _ready() fires synchronously
-## during World's add_child(), before World has set this belt's actual
+## for its upstream neighbor (via World.get_structure_at), sets durability
+## from its BuildingKinds entry, and shows the freshly-placed "just
+## started" construction visual. Deliberately does NOT call
+## refresh_connections() here -- _ready() fires synchronously during
+## World's add_child(), before World has set this belt's actual
 ## global_position/rotation, so a grid-cell lookup at this point would
 ## check the wrong cell entirely. World calls refresh_connections() itself
 ## once placement is finished (see _refresh_neighbor_visuals).
@@ -68,14 +79,27 @@ func _ready() -> void:
 	# one. "structures" is enough to make it clickable (see
 	# World._find_building_owner) without affecting that search.
 	add_to_group("structures")
+	# Belt never blocks pathing -- blobs walk over a completed one like
+	# ordinary ground rather than routing around it (see
+	# World._structure_blocks_movement). Unconditional rather than only
+	# while under construction, since an incomplete belt has nothing to
+	# deliver/carry yet anyway (see try_receive_input).
+	blocks_movement = false
 	_entry_direction = facing
 	_floor_material = _build_floor_material()
 	_tile.set_surface_override_material(0, _floor_material)
+	_setup_durability()
+	_apply_construction_visual(0.0)
 
 ## Duck-typed by BuildingMenu (has_method("get_info_text")) to show a line of
 ## live status beyond the generic name/durability/ports fields.
 func get_info_text() -> String:
 	return "Carrying: %s" % ("yes" if current_item != null else "empty")
+
+## Template Method hook (see BuildableStructure._apply_construction_visual):
+## a single mesh that both scales and repositions as it rises.
+func _construction_meshes() -> Array:
+	return [{"mesh": _tile, "base_position": _tile_base_position}]
 
 ## Builds a small procedural striped texture (alternating light/dark bands)
 ## and a material that tiles it several times along the belt's length, so
@@ -115,31 +139,24 @@ func _process(delta: float) -> void:
 	else:
 		_try_advance_item()
 
-## Re-checks all 4 neighboring grid cells and shows/hides this belt's side
-## rails to match: a rail hides on any side where an adjacent structure
-## exists (belt, extractor, processor, or building), so a chain of placed
-## pieces reads as one continuous trough instead of separate boxed tiles --
-## including through a 90-degree turn, where the "open" sides are simply
-## whichever two edges have neighbors rather than always front/back.
-## Called by World once this belt's own placement is finalized (to react to
-## already-placed neighbors) and again whenever a structure is placed or
-## demolished next to it (see World._refresh_neighbor_visuals).
-func refresh_connections() -> void:
-	var world = get_parent()
-	if world == null:
-		return
-	var my_cell: Vector2i = world.world_to_grid(global_position)
-	for key in GridDirections.CARDINAL_OFFSETS.keys():
-		var world_offset: Vector2i = GridDirections.CARDINAL_OFFSETS[key]
-		var has_neighbor := world.get_structure_at(my_cell + world_offset) != null
-		var local_key := _world_offset_to_local_wall(world_offset)
-		_walls[local_key].visible = not has_neighbor
+## Template Method hook (see LinkableBuilding.refresh_connections): `key`
+## arrives as a *world-space* cardinal direction, but this belt's own rails
+## are indexed by its *rotated local* axes, since a belt's local -Z is
+## always its authored "forward" regardless of which world direction
+## `facing` actually points (look_at handles that mapping at placement
+## time) -- remapped here before actually hiding/showing a rail, so a rail
+## hides on any side where an adjacent structure exists (belt, extractor,
+## processor, or building), reading as one continuous trough instead of
+## separate boxed tiles, including through a 90-degree turn, where the
+## "open" sides are whichever two edges have neighbors rather than always
+## front/back. `_links_to`'s default (any non-null neighbor) is exactly
+## Belt's own connection rule, so only this hook needs overriding.
+func _set_connector_visible(key: String, is_visible: bool) -> void:
+	var local_key := _world_offset_to_local_wall(GridDirections.CARDINAL_OFFSETS[key])
+	_walls[local_key].visible = not is_visible
 
 ## Maps a world-space cardinal offset to the local wall key (pos_x/neg_x/
-## pos_z/neg_z) it corresponds to on *this* belt's own rotated mesh, since
-## a belt's local -Z is always its authored "forward" regardless of which
-## world direction `facing` actually points (look_at handles that mapping
-## at placement time).
+## pos_z/neg_z) it corresponds to on *this* belt's own rotated mesh.
 func _world_offset_to_local_wall(world_offset: Vector2i) -> String:
 	var world_vec := Vector3(world_offset.x, 0.0, world_offset.y)
 	var local_vec: Vector3 = global_transform.basis.inverse() * world_vec
@@ -157,13 +174,19 @@ func _update_item_position() -> void:
 	var exit_offset := Vector3(facing.x, 0.0, facing.y) * (CELL_SIZE * 0.5)
 	current_item.global_position = (global_position - entry_offset).lerp(global_position + exit_offset, _progress)
 
-## Accepts `item` onto this belt if it's currently empty. Called by an
+## Accepts `item` onto this belt if it's currently empty, construction is
+## finished, and the fairness gate (see LinkableBuilding._resolve_fair_input)
+## grants this direction the slot -- fixes the conveyor-merge bug where two
+## belts feeding one shared perpendicular belt would otherwise resolve to
+## whichever is processed first in scene-tree order, forever. Called by an
 ## upstream belt/Extractor/Processor pushing an item toward this cell;
-## `from_direction` is the upstream neighbor's own facing (the direction
-## the item is travelling as it arrives), used to start the item at the
-## correct edge instead of assuming a straight pass-through.
+## `from_direction` is the upstream neighbor's own facing (the direction the
+## item is travelling as it arrives), used to start the item at the correct
+## edge instead of assuming a straight pass-through.
 func try_receive_input(item: Node3D, from_direction: Vector2i = Vector2i.ZERO) -> bool:
-	if current_item != null:
+	if is_under_construction:
+		return false
+	if not _resolve_fair_input(from_direction, current_item == null):
 		return false
 	current_item = item
 	_entry_direction = from_direction if from_direction != Vector2i.ZERO else facing

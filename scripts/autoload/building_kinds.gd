@@ -90,6 +90,29 @@ func _ready() -> void:
 		["Buffer capacity +4", "Buffer capacity +4 again"],
 		16.0
 	))
+	# Wall and Belt are LinkableBuilding entries (see scripts/core/linkable_building.gd)
+	# rather than fixed always-available factory pieces -- they still need to
+	# stay available from the very start, though (a new player has no Town
+	# Hall yet to unlock anything from), so GameManager seeds both "wall" and
+	# "belt" as already-unlocked in `unlocked_buildings` alongside "town_hall"
+	# rather than relying on `unlock_cost` alone (0 cost still means "must be
+	# manually unlocked via BuildingMenu" unless also seeded). Neither has a
+	# fixed input/output port shape (Wall has none at all; Belt accepts from
+	# any side but its own facing) so both leave input_ports/output_ports empty.
+	_register(Kind.new(
+		"wall", "Wall", "res://scenes/factory/wall.tscn", 8,
+		[], [], 0, "",
+		60, [],
+		[],
+		8.0
+	))
+	_register(Kind.new(
+		"belt", "Belt", "res://scenes/factory/belt_segment.tscn", 5,
+		[], [], 0, "",
+		40, [],
+		[],
+		6.0
+	))
 
 ## Thin covariant override: keeps callers' `var kind := BuildingKinds.get_kind(id)`
 ## statically typed as `Kind` (with BuildingKinds' own fields). Returns null

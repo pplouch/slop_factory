@@ -33,6 +33,14 @@ var _buffer: Array = []
 
 @onready var _body_mesh: MeshInstance3D = $Body
 @onready var _body_base_position: Vector3 = _body_mesh.position
+@onready var _input_south_mesh: MeshInstance3D = $InputMarkerSouth
+@onready var _input_south_base_position: Vector3 = _input_south_mesh.position
+@onready var _input_west_mesh: MeshInstance3D = $InputMarkerWest
+@onready var _input_west_base_position: Vector3 = _input_west_mesh.position
+@onready var _output_north_mesh: MeshInstance3D = $OutputMarkerNorth
+@onready var _output_north_base_position: Vector3 = _output_north_mesh.position
+@onready var _output_east_mesh: MeshInstance3D = $OutputMarkerEast
+@onready var _output_east_base_position: Vector3 = _output_east_mesh.position
 
 
 ## Godot lifecycle hook: registers for both grouping conventions used by
@@ -46,9 +54,17 @@ func _ready() -> void:
 	_apply_construction_visual(0.0)
 
 ## Template Method hook (see BuildableStructure._apply_construction_visual):
-## a single mesh that both scales and repositions as it rises.
+## the body plus all 4 port markers rise together -- a marker left out here
+## would render at full size from placement, misleadingly suggesting the
+## building already works before construction finishes.
 func _construction_meshes() -> Array:
-	return [{"mesh": _body_mesh, "base_position": _body_base_position}]
+	return [
+		{"mesh": _body_mesh, "base_position": _body_base_position},
+		{"mesh": _input_south_mesh, "base_position": _input_south_base_position},
+		{"mesh": _input_west_mesh, "base_position": _input_west_base_position},
+		{"mesh": _output_north_mesh, "base_position": _output_north_base_position},
+		{"mesh": _output_east_mesh, "base_position": _output_east_base_position},
+	]
 
 ## Current buffer capacity: BASE_MAX_BUFFER plus BUFFER_BONUS_PER_LEVEL for
 ## every per-instance upgrade level bought so far.

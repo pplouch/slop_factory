@@ -48,14 +48,6 @@ text = "Extractor (25 wood)"
 layout_mode = 2
 text = "Processor (30 wood) — 2 wood -> 1 plank"
 
-[node name="BeltButton" type="Button" parent="PalettePanel/VBox"]
-layout_mode = 2
-text = "Belt (5 wood)"
-
-[node name="WallButton" type="Button" parent="PalettePanel/VBox"]
-layout_mode = 2
-text = "Wall (8 wood)"
-
 [node name="BuildingsSeparator" type="HSeparator" parent="PalettePanel/VBox"]
 layout_mode = 2
 

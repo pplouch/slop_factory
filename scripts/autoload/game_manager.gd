@@ -69,10 +69,16 @@ var upgrade_levels: Dictionary = {
 
 ## Tech-tree unlock state, keyed by BuildingKinds id. Town Hall is the root
 ## of the tree (always unlocked, since the player needs to build *something*
-## to receive resources at all) -- everything else starts locked and must be
-## bought via try_unlock_building before BuildPalette will show it.
+## to receive resources at all); Wall and Belt (LinkableBuilding entries,
+## see scripts/core/linkable_building.gd) are seeded unlocked too, since
+## they were always-available factory pieces before joining the tech tree
+## and a new player has no Town Hall yet to unlock anything else from.
+## Everything else starts locked and must be bought via try_unlock_building
+## before BuildPalette will show it.
 var unlocked_buildings: Dictionary = {
 	"town_hall": true,
+	"wall": true,
+	"belt": true,
 }
 
 ## Godot lifecycle hook: marks the moment the difficulty ramp starts

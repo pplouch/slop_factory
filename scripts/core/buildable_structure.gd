@@ -70,7 +70,11 @@ func add_construction_progress(amount: float) -> void:
 ## `[{"mesh": _body_mesh, "base_position": _body_base_position}]`. An entry
 ## may set `"scales": false` for a mesh that should only reposition as it
 ## rises, not also scale (Building's Roof sits on top of its Walls and
-## never changes size, only height).
+## never changes size, only height). Must include EVERY visible
+## MeshInstance3D, not just the "main" body -- a decorative mesh left out
+## (e.g. a port marker) renders at full size from the moment the structure
+## is placed, misleadingly suggesting it's already built (see StorageDepot/
+## WaterTank's port markers for the pattern to follow).
 func _construction_meshes() -> Array:
 	return []
 
