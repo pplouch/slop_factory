@@ -16,6 +16,15 @@ extends LinkableBuilding
 ## (see scripts/core/linkable_building.gd and scripts/core/buildable_structure.gd).
 ## Never rotates -- its local axes are always the world axes, no facing to
 ## account for, unlike BeltSegment.
+##
+## Its CollisionShape3D spans the *full* grid cell (see wall.tscn), not just
+## the small visual "Post" mesh -- previously it was post-sized, leaving a
+## real gap between two adjacent wall cells' actual colliders even though
+## the connector-bar meshes visually bridged them into what looked like one
+## continuous fence. Blobs never noticed (they route around the whole
+## reserved grid cell via the pathing grid, never testing the physical
+## collider), but Enemy has no pathing and walks straight at its target --
+## this was the actual cause of enemies passing through fences.
 
 @onready var _post_mesh: MeshInstance3D = $Post
 @onready var _post_base_position: Vector3 = _post_mesh.position
