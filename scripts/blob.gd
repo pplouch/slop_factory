@@ -56,9 +56,25 @@ const SELECTED_COLOR := Color(1.0, 0.95, 0.3, 1)
 const HOVER_COLOR := Color(0.85, 0.9, 1.0, 1)
 const DEPOSIT_COLOR := Color(1.0, 0.92, 0.5)
 
+# -- Limb animation tuning (see _update_limb_animation) -- blocky, code-
+# -- driven swinging rather than a real Skeleton3D/bone rig, matching this
+# -- project's "everything built and animated in script" convention. --
+const GAIT_CYCLES_PER_SECOND := 1.6
+const GAIT_AMPLITUDE := 0.6
+const HARVEST_CYCLES_PER_SECOND := 2.2
+const HARVEST_AMPLITUDE := 0.9
+const ATTACK_SWING_DURATION := 0.22
+const LIMB_RESET_SPEED := 8.0
+
 @onready var visuals: Node3D = $Visuals
 @onready var selection_ring: MeshInstance3D = $Visuals/SelectionRing
-@onready var body_mesh: MeshInstance3D = $Visuals/Body
+@onready var torso_mesh: MeshInstance3D = $Visuals/Torso
+@onready var head_mesh: MeshInstance3D = $Visuals/Head
+@onready var left_arm_pivot: Node3D = $Visuals/LeftArmPivot
+@onready var right_arm_pivot: Node3D = $Visuals/RightArmPivot
+@onready var left_leg_pivot: Node3D = $Visuals/LeftLegPivot
+@onready var right_leg_pivot: Node3D = $Visuals/RightLegPivot
+@onready var _body_meshes: Array = [torso_mesh, head_mesh, $Visuals/LeftArmPivot/LeftArm, $Visuals/RightArmPivot/RightArm, $Visuals/LeftLegPivot/LeftLeg, $Visuals/RightLegPivot/RightLeg]
 
 ## Which BlobKinds archetype this blob is. Must be set (by whoever
 ## instantiates the scene, e.g. Building) *before* this node enters the
@@ -79,6 +95,18 @@ var attack_interval: float = BASE_ATTACK_INTERVAL
 
 var _kind_scale: float = 1.0
 var _attack_cooldown: float = 0.0
+## The single material shared (via set_surface_override_material) across
+## every body-part mesh -- one duplicate per blob instance so recoloring it
+## (kind tint, hurt flash) never bleeds into other blobs sharing the base
+## BoxMesh resources, and flashing it once flashes the whole body at once.
+var _body_material: StandardMaterial3D
+## Gait-cycle phase accumulator driving the walk/harvest limb swing (see
+## _update_limb_animation) -- a single running phase rather than per-limb
+## timers, so left/right and arm/leg just read it with different signs.
+var _gait_phase: float = 0.0
+## Counts down while a one-off attack-swing animation is playing, so the
+## regular gait/harvest animation doesn't fight it every frame.
+var _attack_swing_timer: float = 0.0
 
 ## Resource type -> amount currently being carried. Normally holds at most
 ## one key at a time (a blob only harvests one node at a once), but it's a
@@ -185,16 +213,19 @@ func _refresh_stats() -> void:
 ## Colors and sizes this blob according to its BlobKinds archetype (a
 ## per-instance hue jitter keeps same-kind blobs distinguishable from each
 ## other while still clearly belonging to the same family). Duplicates the
-## shared sphere material first so this doesn't recolor every other blob
-## using the same mesh resource.
+## shared body material once and applies that single instance to every
+## body-part mesh (head/torso/arms/legs), so this doesn't recolor every
+## other blob using the same base BoxMesh resources, and a later hurt-flash
+## only needs to animate one material to flash the whole body.
 func _apply_kind_look() -> void:
 	var kind := BlobKinds.get_kind(kind_id)
 	_kind_scale = kind.body_scale
 
-	var mat: StandardMaterial3D = body_mesh.mesh.material.duplicate()
+	_body_material = torso_mesh.mesh.material.duplicate()
 	var hue := fposmod(kind.hue + randf_range(-0.03, 0.03), 1.0)
-	mat.albedo_color = Color.from_hsv(hue, kind.saturation, kind.value)
-	body_mesh.set_surface_override_material(0, mat)
+	_body_material.albedo_color = Color.from_hsv(hue, kind.saturation, kind.value)
+	for mesh_inst in _body_meshes:
+		mesh_inst.set_surface_override_material(0, _body_material)
 
 	visuals.scale = Vector3.ONE * _kind_scale
 
@@ -351,13 +382,13 @@ func _approach_point(target: Vector3, angle: float, radius: float = APPROACH_RAD
 	var jittered_angle := angle + randf_range(-0.15, 0.15)
 	return target + Vector3(cos(jittered_angle), 0.0, sin(jittered_angle)) * radius
 
-## Plays a quick squash-and-recover animation on the body, giving visible
+## Plays a quick squash-and-recover animation on the torso, giving visible
 ## feedback the instant an order is accepted (in addition to the ring
 ## marker World spawns at the target).
 func _acknowledge_order() -> void:
-	body_mesh.scale = Vector3(1.15, 0.65, 1.15)
+	torso_mesh.scale = Vector3(1.25, 0.7, 1.25)
 	var tween := create_tween()
-	tween.tween_property(body_mesh, "scale", Vector3(1, 0.85, 1), 0.25) \
+	tween.tween_property(torso_mesh, "scale", Vector3.ONE, 0.25) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	Effects.play_chirp(get_parent(), global_position + Vector3(0.0, 0.6, 0.0))
 
@@ -377,6 +408,7 @@ func _physics_process(delta: float) -> void:
 	global_position.y = 0.0
 	_update_stall_detection(delta)
 	_update_combat(delta)
+	_update_limb_animation(delta)
 
 ## Moves the blob toward `target` at its current speed and faces it that
 ## direction. Shared by MovingState and ReturningState.
@@ -530,6 +562,7 @@ func _update_combat(delta: float) -> void:
 		if _attack_cooldown <= 0.0:
 			_attack_cooldown = attack_interval
 			enemy.take_damage(attack_power, self)
+			_play_attack_swing()
 	_update_combat_regen(delta)
 
 ## Overrides Combatant's default "hit landed" feedback with something more
@@ -543,17 +576,62 @@ func _show_damage_feedback(amount: float) -> void:
 	Effects.spawn_impact(get_parent(), global_position + Vector3(0.0, 0.6, 0.0), Color(1.0, 0.1, 0.1), 10)
 	_flash_hurt()
 
-## Briefly flashes the body material red and back, reusing the per-instance
-## material _apply_kind_look already duplicated (so this never bleeds into
-## other blobs sharing the base mesh resource).
+## Briefly flashes the shared body material red and back -- since every
+## body-part mesh points at this same _apply_kind_look-duplicated instance,
+## flashing it once flashes the whole humanoid body at once.
 func _flash_hurt() -> void:
-	var mat := body_mesh.get_surface_override_material(0)
-	if not mat:
+	if not _body_material:
 		return
-	var original_color: Color = mat.albedo_color
+	var original_color: Color = _body_material.albedo_color
 	var tween := create_tween()
-	tween.tween_property(mat, "albedo_color", Color(1.0, 0.15, 0.1), 0.06)
-	tween.tween_property(mat, "albedo_color", original_color, 0.3)
+	tween.tween_property(_body_material, "albedo_color", Color(1.0, 0.15, 0.1), 0.06)
+	tween.tween_property(_body_material, "albedo_color", original_color, 0.3)
+
+## Drives the blocky humanoid's limb swing every physics frame: a walking
+## gait while actually travelling with real velocity (legs and arms swing
+## oppositely, in sync with each other diagonally, the classic walk-cycle
+## look), a chopping motion while harvesting, and an easing return to the
+## neutral pose otherwise (idle, hold, patrol/explore standing still,
+## between attacks, ...). A one-off attack swing (see _play_attack_swing)
+## takes over the right arm for its short duration instead of fighting it.
+func _update_limb_animation(delta: float) -> void:
+	if _attack_swing_timer > 0.0:
+		_attack_swing_timer -= delta
+		return
+
+	var is_moving: bool = current_state.is_travelling() and velocity.length() > 0.15
+	var is_harvesting: bool = current_state is HarvestingState
+
+	if is_moving:
+		_gait_phase += delta * TAU * GAIT_CYCLES_PER_SECOND * (velocity.length() / max(speed, 0.01))
+		var swing := sin(_gait_phase) * GAIT_AMPLITUDE
+		left_arm_pivot.rotation.x = swing
+		right_arm_pivot.rotation.x = -swing
+		left_leg_pivot.rotation.x = -swing
+		right_leg_pivot.rotation.x = swing
+	elif is_harvesting:
+		_gait_phase += delta * TAU * HARVEST_CYCLES_PER_SECOND
+		var chop: float = (sin(_gait_phase) * 0.5 + 0.5) * HARVEST_AMPLITUDE
+		right_arm_pivot.rotation.x = lerp(right_arm_pivot.rotation.x, -chop, delta * LIMB_RESET_SPEED)
+		left_arm_pivot.rotation.x = lerp(left_arm_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+		left_leg_pivot.rotation.x = lerp(left_leg_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+		right_leg_pivot.rotation.x = lerp(right_leg_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+	else:
+		left_arm_pivot.rotation.x = lerp(left_arm_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+		right_arm_pivot.rotation.x = lerp(right_arm_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+		left_leg_pivot.rotation.x = lerp(left_leg_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+		right_leg_pivot.rotation.x = lerp(right_leg_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+
+## Plays a quick forward punch with the right arm the instant an attack
+## actually lands (see _update_combat), taking over from the regular gait/
+## harvest animation for ATTACK_SWING_DURATION so the two don't fight.
+func _play_attack_swing() -> void:
+	_attack_swing_timer = ATTACK_SWING_DURATION
+	var tween := create_tween()
+	tween.tween_property(right_arm_pivot, "rotation:x", -1.1, ATTACK_SWING_DURATION * 0.4) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(right_arm_pivot, "rotation:x", 0.0, ATTACK_SWING_DURATION * 0.6) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 
 ## Closest member of the "enemies" group within `range`, or null.
 func _find_nearest_enemy_in_range(range_limit: float) -> Node:

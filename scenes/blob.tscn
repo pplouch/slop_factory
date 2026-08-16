@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/blob.gd" id="1"]
 
@@ -8,10 +8,21 @@ radius = 0.4
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_body"]
 albedo_color = Color(0.6, 0.8, 0.95, 1)
 
-[sub_resource type="SphereMesh" id="SphereMesh_body"]
+[sub_resource type="BoxMesh" id="BoxMesh_head"]
 material = SubResource("StandardMaterial3D_body")
-radius = 0.4
-height = 0.8
+size = Vector3(0.26, 0.26, 0.26)
+
+[sub_resource type="BoxMesh" id="BoxMesh_torso"]
+material = SubResource("StandardMaterial3D_body")
+size = Vector3(0.34, 0.38, 0.2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_arm"]
+material = SubResource("StandardMaterial3D_body")
+size = Vector3(0.12, 0.32, 0.12)
+
+[sub_resource type="BoxMesh" id="BoxMesh_leg"]
+material = SubResource("StandardMaterial3D_body")
+size = Vector3(0.14, 0.34, 0.14)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ring"]
 albedo_color = Color(1.0, 0.95, 0.3, 1)
@@ -36,10 +47,41 @@ shape = SubResource("SphereShape3D_1")
 
 [node name="Visuals" type="Node3D" parent="."]
 
-[node name="Body" type="MeshInstance3D" parent="Visuals"]
-position = Vector3(0, 0.4, 0)
-scale = Vector3(1, 0.85, 1)
-mesh = SubResource("SphereMesh_body")
+[node name="Torso" type="MeshInstance3D" parent="Visuals"]
+position = Vector3(0, 0.53, 0)
+mesh = SubResource("BoxMesh_torso")
+
+[node name="Head" type="MeshInstance3D" parent="Visuals"]
+position = Vector3(0, 0.85, 0)
+mesh = SubResource("BoxMesh_head")
+
+[node name="LeftArmPivot" type="Node3D" parent="Visuals"]
+position = Vector3(-0.23, 0.72, 0)
+
+[node name="LeftArm" type="MeshInstance3D" parent="Visuals/LeftArmPivot"]
+position = Vector3(0, -0.16, 0)
+mesh = SubResource("BoxMesh_arm")
+
+[node name="RightArmPivot" type="Node3D" parent="Visuals"]
+position = Vector3(0.23, 0.72, 0)
+
+[node name="RightArm" type="MeshInstance3D" parent="Visuals/RightArmPivot"]
+position = Vector3(0, -0.16, 0)
+mesh = SubResource("BoxMesh_arm")
+
+[node name="LeftLegPivot" type="Node3D" parent="Visuals"]
+position = Vector3(-0.09, 0.34, 0)
+
+[node name="LeftLeg" type="MeshInstance3D" parent="Visuals/LeftLegPivot"]
+position = Vector3(0, -0.17, 0)
+mesh = SubResource("BoxMesh_leg")
+
+[node name="RightLegPivot" type="Node3D" parent="Visuals"]
+position = Vector3(0.09, 0.34, 0)
+
+[node name="RightLeg" type="MeshInstance3D" parent="Visuals/RightLegPivot"]
+position = Vector3(0, -0.17, 0)
+mesh = SubResource("BoxMesh_leg")
 
 [node name="SelectionRing" type="MeshInstance3D" parent="Visuals"]
 position = Vector3(0, 0.05, 0)
