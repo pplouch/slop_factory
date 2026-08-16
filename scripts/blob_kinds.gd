@@ -22,9 +22,14 @@ class Kind:
 	var hue: float
 	var saturation: float
 	var value: float
+	## Short flavor blurb describing what this kind is best used for --
+	## surfaced by UnitInfoPanel next to the standing-order buttons whenever
+	## a unit (or group) of this kind is selected.
+	var trait_description: String
 
 	func _init(p_id: String, p_name: String, p_cost: int, p_speed: float, p_capacity: float,
-			p_harvest: float, p_scale: float, p_hue: float, p_sat: float, p_val: float) -> void:
+			p_harvest: float, p_scale: float, p_hue: float, p_sat: float, p_val: float,
+			p_trait_description: String = "") -> void:
 		id = p_id
 		display_name = p_name
 		hire_cost = p_cost
@@ -35,10 +40,17 @@ class Kind:
 		hue = p_hue
 		saturation = p_sat
 		value = p_val
+		trait_description = p_trait_description
 
 	## Short "Spd 1.6x Cap 0.6x Pwr 0.8x" style summary for hire-menu rows.
 	func stat_summary() -> String:
 		return "Spd %.1fx  Cap %.1fx  Pwr %.1fx" % [speed_mult, capacity_mult, harvest_mult]
+
+	## This kind's body tint as a Color, for UnitInfoPanel's per-kind group
+	## boxes -- the exact same hue/saturation/value Blob itself reads to
+	## color its own visuals, so a kind's UI box always matches its units.
+	func body_color() -> Color:
+		return Color.from_hsv(hue, saturation, value)
 
 var _kinds: Dictionary = {}
 var _ordered_ids: Array = []
@@ -49,10 +61,14 @@ var _ordered_ids: Array = []
 ## speed, haulers trade speed for capacity, brutes trade speed for harvest
 ## power.
 func _ready() -> void:
-	_register(Kind.new("worker", "Worker", 15, 1.0, 1.0, 1.0, 1.0, 0.55, 0.45, 0.95))
-	_register(Kind.new("scout", "Scout", 20, 1.6, 0.6, 0.8, 0.82, 0.13, 0.65, 0.98))
-	_register(Kind.new("hauler", "Hauler", 25, 0.75, 1.8, 0.9, 1.25, 0.62, 0.5, 0.85))
-	_register(Kind.new("brute", "Brute", 30, 0.85, 1.1, 1.6, 1.2, 0.02, 0.65, 0.9))
+	_register(Kind.new("worker", "Worker", 15, 1.0, 1.0, 1.0, 1.0, 0.55, 0.45, 0.95,
+		"Balanced all-rounder, good at everything and best at nothing."))
+	_register(Kind.new("scout", "Scout", 20, 1.6, 0.6, 0.8, 0.82, 0.13, 0.65, 0.98,
+		"Fastest mover -- best for Explore/Patrol and covering ground."))
+	_register(Kind.new("hauler", "Hauler", 25, 0.75, 1.8, 0.9, 1.25, 0.62, 0.5, 0.85,
+		"Biggest carry capacity -- fewer trips per resource run."))
+	_register(Kind.new("brute", "Brute", 30, 0.85, 1.1, 1.6, 1.2, 0.02, 0.65, 0.9,
+		"Hardest hitter and harvester -- best for Hold sentry duty."))
 
 ## Adds `kind` to the catalog, preserving registration order for UI display.
 func _register(kind: Kind) -> void:

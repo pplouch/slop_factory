@@ -175,6 +175,10 @@ func _ready() -> void:
 	debug_menu.toggle_hitboxes_requested.connect(_toggle_debug_visuals)
 	debug_menu.toggle_grid_requested.connect(_toggle_world_grid)
 
+	unit_info_panel.patrol_requested.connect(_order_pending_patrol)
+	unit_info_panel.hold_requested.connect(_order_hold)
+	unit_info_panel.explore_requested.connect(_order_explore)
+
 ## Godot per-frame hook: periodically (not every frame -- see
 ## CHUNK_CHECK_INTERVAL) makes sure every chunk within CHUNK_LOAD_RADIUS of
 ## the camera's current focus point has been generated.
@@ -524,23 +528,40 @@ func _unhandled_input(event: InputEvent) -> void:
 		_handle_order_key(event.keycode)
 
 ## Handles the standing-order keyboard shortcuts (P/H/X), no-ops if nothing
-## is selected. P arms "pending patrol" (see _handle_right_click for the
-## follow-up click that completes it); H and X take effect immediately,
-## each blob using its own current position as the order's anchor point.
+## is selected. Delegates to the same _order_* methods UnitInfoPanel's
+## standing-order buttons call, so keyboard and UI stay in lockstep.
 func _handle_order_key(keycode: int) -> void:
 	if selected_blobs.is_empty():
 		return
 	match keycode:
 		KEY_P:
-			_pending_patrol = true
-			var origin: Vector3 = selected_blobs[0].global_position
-			Effects.spawn_floating_text(self, origin + Vector3(0.0, 1.6, 0.0), "Patrol: right-click far point", COLOR_PATROL)
+			_order_pending_patrol()
 		KEY_H:
-			for blob in selected_blobs:
-				blob.command_hold()
+			_order_hold()
 		KEY_X:
-			for blob in selected_blobs:
-				blob.command_explore()
+			_order_explore()
+
+## Arms "pending patrol" for the current selection -- the *next* right-click
+## sets the far point (see _handle_right_click). Shared by the 'P' key and
+## UnitInfoPanel's Patrol button.
+func _order_pending_patrol() -> void:
+	if selected_blobs.is_empty():
+		return
+	_pending_patrol = true
+	var origin: Vector3 = selected_blobs[0].global_position
+	Effects.spawn_floating_text(self, origin + Vector3(0.0, 1.6, 0.0), "Patrol: right-click far point", COLOR_PATROL)
+
+## Orders every currently-selected blob to Hold at its own current position.
+## Shared by the 'H' key and UnitInfoPanel's Hold button.
+func _order_hold() -> void:
+	for blob in selected_blobs:
+		blob.command_hold()
+
+## Orders every currently-selected blob to Explore around its own current
+## position. Shared by the 'X' key and UnitInfoPanel's Explore button.
+func _order_explore() -> void:
+	for blob in selected_blobs:
+		blob.command_explore()
 
 ## Fires a physics ray from the camera through the given screen position and
 ## returns the first hit whose collision layer matches `mask` (empty

@@ -17,6 +17,8 @@ extends CanvasLayer
 ## Refreshes reactively whenever GameManager's resource/upgrade/unlock
 ## signals fire, rather than polling every frame.
 
+@onready var panel: PanelContainer = $Panel
+@onready var vbox: VBoxContainer = $Panel/Scroll/VBox
 @onready var this_building_section: VBoxContainer = $Panel/Scroll/VBox/ThisBuildingSection
 @onready var name_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/NameLabel
 @onready var durability_label: Label = $Panel/Scroll/VBox/ThisBuildingSection/DurabilityLabel
@@ -201,6 +203,32 @@ func _refresh() -> void:
 		_unlock_labels[building_id].text = label_text
 		_unlock_buttons[building_id].text = "Unlock (%d wood)" % kind.unlock_cost
 		_unlock_buttons[building_id].disabled = not GameManager.can_unlock_building(building_id)
+
+	_fit_to_content()
+
+## Recomputes the panel's size from its current content (rather than the
+## fixed box the .tscn used to hardcode) and re-centers it, so a
+## content-light building (e.g. a Wall) gets a small box and a
+## content-heavy one (Town Hall, with every section visible) gets a bigger
+## one -- capped at MAX_PANEL_SIZE_FRACTION of the viewport either way, with
+## the existing ScrollContainer taking over for whatever doesn't fit.
+const MIN_PANEL_SIZE := Vector2(280.0, 160.0)
+const MAX_PANEL_SIZE_FRACTION := 0.85
+## StyleBoxFlat_panel's own content margins (see theme/game_theme.tres) --
+## get_combined_minimum_size() on `vbox` doesn't include the *ancestor*
+## Panel's stylebox padding, so it's added back in here.
+const PANEL_PADDING := Vector2(30.0, 24.0)
+func _fit_to_content() -> void:
+	var natural: Vector2 = vbox.get_combined_minimum_size() + PANEL_PADDING
+	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
+	var max_size: Vector2 = viewport_size * MAX_PANEL_SIZE_FRACTION
+	var target := Vector2(
+		clamp(natural.x, MIN_PANEL_SIZE.x, max_size.x),
+		clamp(natural.y, MIN_PANEL_SIZE.y, max_size.y)
+	)
+	panel.custom_minimum_size = target
+	panel.size = target
+	panel.position = (viewport_size - target) * 0.5
 
 ## Populates name/durability/ports/upgrade-level/perk for whichever building
 ## is currently open. Every field is read via duck-typing ("x" in building)
