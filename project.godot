@@ -8,16 +8,38 @@
 
 config_version=5
 
+[animation]
+
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
+
 [application]
 
 config/name="test"
+run/main_scene="uid://kw8ovq1qk74x"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
+
+[autoload]
+
+GameManager="*res://scripts/game_manager.gd"
+Effects="*res://scripts/effects.gd"
+BlobKinds="*res://scripts/blob_kinds.gd"
 
 [display]
 
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[dotnet]
+
+project/assembly_name="test"
+
+[layer_names]
+
+3d_physics/layer_1="Ground"
+3d_physics/layer_2="Blobs"
+3d_physics/layer_3="Resources"
+3d_physics/layer_4="Enemies"
 
 [physics]
 
