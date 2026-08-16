@@ -17,7 +17,7 @@ extends Node3D
 ## resource), then plays a scale-up + fade-out tween and frees itself once
 ## it finishes.
 func _ready() -> void:
-	var mat: StandardMaterial3D = mesh.mesh.material.duplicate()
+	var mat: StandardMaterial3D = MaterialUtil.duplicated_material(mesh)
 	mat.albedo_color = color
 	mat.emission = color
 	mesh.set_surface_override_material(0, mat)

@@ -15,15 +15,6 @@ extends Node3D
 const CELL_SIZE := 2.0
 const BELT_SPEED := 1.2
 
-## The 4 cardinal grid-cell offsets checked by refresh_connections, in the
-## same order as the WALLS dictionary keys below.
-const NEIGHBOR_OFFSETS := {
-	"pos_x": Vector2i(1, 0),
-	"neg_x": Vector2i(-1, 0),
-	"pos_z": Vector2i(0, 1),
-	"neg_z": Vector2i(0, -1),
-}
-
 ## Grid direction this belt moves items toward: (1,0)/(-1,0)/(0,1)/(0,-1).
 @export var facing: Vector2i = Vector2i(1, 0)
 
@@ -138,8 +129,8 @@ func refresh_connections() -> void:
 	if world == null:
 		return
 	var my_cell: Vector2i = world.world_to_grid(global_position)
-	for key in NEIGHBOR_OFFSETS.keys():
-		var world_offset: Vector2i = NEIGHBOR_OFFSETS[key]
+	for key in GridDirections.CARDINAL_OFFSETS.keys():
+		var world_offset: Vector2i = GridDirections.CARDINAL_OFFSETS[key]
 		var has_neighbor := world.get_structure_at(my_cell + world_offset) != null
 		var local_key := _world_offset_to_local_wall(world_offset)
 		_walls[local_key].visible = not has_neighbor

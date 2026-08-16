@@ -1,12 +1,13 @@
-extends StaticBody3D
+extends BuildableStructure
 ## A dedicated water-storage building: a single-input/single-output buffer
 ## like StorageDepot, but only accepts the "water" resource type -- a belt
 ## line feeding it anything else is simply refused, the same way Processor
 ## refuses an input type that doesn't match its recipe.
 ##
-## Mirrors Building/StorageDepot's construction-gating pattern (see
-## add_construction_progress) -- it's a BuildingKinds entry like them, not
-## an always-available factory piece like Wall/belt/extractor/processor.
+## `kind_id`, `upgrade_level`, `durability`/`max_durability`,
+## `is_under_construction`/`construction_progress`, `add_construction_progress()`,
+## and `try_upgrade()` all come from BuildableStructure (see
+## scripts/core/buildable_structure.gd).
 
 const CELL_SIZE := 2.0
 const BASE_MAX_BUFFER := 8
@@ -17,15 +18,6 @@ const ACCEPTED_RESOURCE_TYPE := "water"
 ## BuildingKinds.get_kind("water_tank").output_ports.
 const OUTPUT_PORT := Vector2i(0, 1)
 
-@export var kind_id: String = "water_tank"
-
-var upgrade_level := 0
-var durability: int
-var max_durability: int
-
-var is_under_construction := true
-var construction_progress := 0.0
-
 var _buffer: Array = []
 
 @onready var _tank_mesh: MeshInstance3D = $Tank
@@ -35,9 +27,7 @@ var _buffer: Array = []
 func _ready() -> void:
 	add_to_group("buildings")
 	add_to_group("structures")
-	var kind := BuildingKinds.get_kind(kind_id)
-	max_durability = kind.max_durability
-	durability = max_durability
+	_setup_durability()
 	_apply_construction_visual(0.0)
 
 ## Duck-typed by BuildingMenu (has_method("get_info_text")) to show a line
@@ -45,36 +35,13 @@ func _ready() -> void:
 func get_info_text() -> String:
 	return "Stores: water only\nBuffer: %d/%d" % [_buffer.size(), _max_buffer()]
 
-func add_construction_progress(amount: float) -> void:
-	if not is_under_construction:
-		return
-	construction_progress += amount
-	var required: float = BuildingKinds.get_kind(kind_id).build_labor
-	if construction_progress >= required:
-		is_under_construction = false
-		_apply_construction_visual(1.0)
-		Effects.spawn_command_marker(get_parent(), global_position + Vector3(0.0, 0.05, 0.0), Color(1.0, 0.85, 0.3, 1.0))
-	else:
-		_apply_construction_visual(construction_progress / required)
-
-func _apply_construction_visual(fraction: float) -> void:
-	var height_fraction: float = lerp(0.15, 1.0, clamp(fraction, 0.0, 1.0))
-	_tank_mesh.scale.y = height_fraction
-	_tank_mesh.position.y = _tank_base_position.y * height_fraction
+## Template Method hook (see BuildableStructure._apply_construction_visual):
+## a single mesh that both scales and repositions as it rises.
+func _construction_meshes() -> Array:
+	return [{"mesh": _tank_mesh, "base_position": _tank_base_position}]
 
 func _max_buffer() -> int:
 	return BASE_MAX_BUFFER + upgrade_level * BUFFER_BONUS_PER_LEVEL
-
-func try_upgrade() -> bool:
-	if is_under_construction:
-		return false
-	var kind := BuildingKinds.get_kind(kind_id)
-	if upgrade_level >= kind.upgrade_costs.size():
-		return false
-	if not GameManager.try_spend_wood(kind.upgrade_costs[upgrade_level]):
-		return false
-	upgrade_level += 1
-	return true
 
 ## Godot per-frame hook: tries to push the oldest buffered item out through
 ## its single output port.

@@ -213,9 +213,12 @@ func _refresh() -> void:
 ## content-light building (e.g. a Wall) gets a small box and a
 ## content-heavy one (Town Hall, with every section visible) gets a bigger
 ## one -- capped at MAX_PANEL_SIZE_FRACTION of the viewport either way, with
-## the existing ScrollContainer taking over for whatever doesn't fit.
+## the existing ScrollContainer taking over for whatever doesn't fit. The
+## actual clamp math is shared with UnitInfoPanel via PanelAutofit (see
+## scripts/core/panel_autofit.gd); only the natural-size computation and
+## the final centered `position` below are specific to this panel.
 const MIN_PANEL_SIZE := Vector2(280.0, 160.0)
-const MAX_PANEL_SIZE_FRACTION := 0.85
+const MAX_PANEL_SIZE_FRACTION := Vector2(0.85, 0.85)
 ## StyleBoxFlat_panel's own content margins (see theme/game_theme.tres) --
 ## get_combined_minimum_size() on `vbox` doesn't include the *ancestor*
 ## Panel's stylebox padding, so it's added back in here.
@@ -223,11 +226,7 @@ const PANEL_PADDING := Vector2(30.0, 24.0)
 func _fit_to_content() -> void:
 	var natural: Vector2 = vbox.get_combined_minimum_size() + PANEL_PADDING
 	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
-	var max_size: Vector2 = viewport_size * MAX_PANEL_SIZE_FRACTION
-	var target := Vector2(
-		clamp(natural.x, MIN_PANEL_SIZE.x, max_size.x),
-		clamp(natural.y, MIN_PANEL_SIZE.y, max_size.y)
-	)
+	var target := PanelAutofit.resolve_size(natural, MIN_PANEL_SIZE, MAX_PANEL_SIZE_FRACTION, viewport_size)
 	panel.custom_minimum_size = target
 	panel.size = target
 	panel.position = (viewport_size - target) * 0.5

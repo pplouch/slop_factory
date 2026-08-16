@@ -1,4 +1,4 @@
-extends Node
+extends Registry
 ## BlobKinds (Registry pattern, autoload).
 ##
 ## A small data-driven catalog of the hireable blob archetypes: their stat
@@ -7,6 +7,10 @@ extends Node
 ## without any per-kind UI code; Blob reads it to compute final stats and
 ## cosmetics from its `kind_id`. Adding a new kind is a one-line addition
 ## here -- no scene or UI changes required.
+##
+## The `_kinds`/`_ordered_ids` storage, `_register()`, and `get_ordered_ids()`
+## are inherited from Registry (see scripts/core/registry.gd) -- this file
+## only defines the `Kind` shape and the actual roster.
 
 ## Plain data holder for one blob archetype. Not a Resource/class_name on
 ## purpose: kinds are baked-in game balance data, not something a designer
@@ -59,15 +63,13 @@ class Kind:
 	func body_color() -> Color:
 		return Color.from_hsv(hue, saturation, value)
 
-var _kinds: Dictionary = {}
-var _ordered_ids: Array = []
-
 
 ## Godot lifecycle hook: registers every playable blob archetype. Balanced
 ## around the "worker" as the 1.0x baseline: scouts trade capacity/power for
 ## speed, haulers trade speed for capacity, brutes trade speed for harvest
 ## power.
 func _ready() -> void:
+	_default_id = "worker"
 	_register(Kind.new("worker", "Worker", 15, 1.0, 1.0, 1.0, 1.0, 0.55, 0.45, 0.95,
 		"Balanced all-rounder, good at everything and best at nothing."))
 	_register(Kind.new("scout", "Scout", 20, 1.6, 0.6, 0.8, 0.82, 0.13, 0.65, 0.98,
@@ -79,17 +81,8 @@ func _ready() -> void:
 	_register(Kind.new("builder", "Builder", 22, 1.0, 0.8, 0.7, 1.05, 0.11, 0.55, 0.92,
 		"Slower harvester, but constructs buildings far faster than anyone else.", 2.5))
 
-## Adds `kind` to the catalog, preserving registration order for UI display.
-func _register(kind: Kind) -> void:
-	_kinds[kind.id] = kind
-	_ordered_ids.append(kind.id)
-
-## Returns the Kind for `id`, falling back to "worker" for an unknown id
-## (e.g. old save data referencing a kind that no longer exists).
+## Thin covariant override: keeps callers' `var kind := BlobKinds.get_kind(id)`
+## statically typed as `Kind` (with BlobKinds' own fields) rather than the
+## untyped return Registry's base version has to use to stay generic.
 func get_kind(id: String) -> Kind:
-	return _kinds.get(id, _kinds["worker"])
-
-## Every registered kind id, in registration order -- what BuildingMenu
-## iterates to build its Hire section.
-func get_ordered_ids() -> Array:
-	return _ordered_ids
+	return super.get_kind(id)

@@ -611,13 +611,16 @@ func _handle_click_select(pos: Vector2, additive: bool) -> void:
 		_clear_selection()
 	_selection_changed()
 
-## A clicked collider might *be* the building itself (StorageDepot/Wall,
-## which attach their script directly to a root StaticBody3D) or might be
-## a nested collision body whose *parent* is the building (Building.tscn's
-## "Solid" child, or BeltSegment's ClickArea) -- checks both, returning null
-## if neither applies. Also matches "structures" (extractor/processor/belt),
-## which open the same generic BuildingMenu even though they aren't part of
-## the separate "buildings" group Blob._find_nearest_building searches for a
+## A clicked collider is almost always the building itself directly --
+## every BuildableStructure (Building/StorageDepot/WaterTank) and Wall
+## attach their script straight to a root StaticBody3D. The one remaining
+## case where it's a nested body whose *parent* is the actual owner is
+## BeltSegment's ClickArea (a non-physics Area3D child added purely so a
+## belt, which deliberately has no collider of its own for blobs to walk
+## over, can still be clicked) -- checks both, returning null if neither
+## applies. Also matches "structures" (extractor/processor/belt), which
+## open the same generic BuildingMenu even though they aren't part of the
+## separate "buildings" group Blob._find_nearest_building searches for a
 ## deposit target -- a belt out in the field must never be mistaken for one.
 func _find_building_owner(collider: Node) -> Node:
 	if collider.is_in_group("buildings") or collider.is_in_group("structures"):

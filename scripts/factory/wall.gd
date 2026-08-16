@@ -15,13 +15,6 @@ extends StaticBody3D
 ## isn't a BuildingKinds entry (no ports, no tech-tree gating -- it's a
 ## simple always-available factory-grid piece like belt/extractor/processor).
 
-const NEIGHBOR_OFFSETS := {
-	"pos_x": Vector2i(1, 0),
-	"neg_x": Vector2i(-1, 0),
-	"pos_z": Vector2i(0, 1),
-	"neg_z": Vector2i(0, -1),
-}
-
 var kind_id := "wall"
 var display_name := "Wall"
 var max_durability := 60
@@ -53,6 +46,6 @@ func refresh_connections() -> void:
 	if world == null:
 		return
 	var my_cell: Vector2i = world.world_to_grid(global_position)
-	for key in NEIGHBOR_OFFSETS.keys():
-		var neighbor: Node = world.get_structure_at(my_cell + NEIGHBOR_OFFSETS[key])
+	for key in GridDirections.CARDINAL_OFFSETS.keys():
+		var neighbor: Node = world.get_structure_at(my_cell + GridDirections.CARDINAL_OFFSETS[key])
 		_connectors[key].visible = neighbor is Wall

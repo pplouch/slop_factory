@@ -1,4 +1,4 @@
-extends Node
+extends Registry
 ## BuildingKinds (Registry pattern, autoload).
 ##
 ## Data-driven catalog of placeable building types: their wood build cost,
@@ -9,6 +9,12 @@ extends Node
 ## BuildPalette's building buttons and BuildingMenu's "Unlock Buildings"
 ## section are both generated from get_ordered_ids(), so adding a new
 ## building type needs no UI changes -- only a _register call here.
+##
+## The `_kinds`/`_ordered_ids` storage, `_register()`, and `get_ordered_ids()`
+## are inherited from Registry (see scripts/core/registry.gd). Registry's
+## default `_default_id = ""` already matches this catalog's fallback policy
+## (return null for an unknown id, rather than a fallback entry), so it's
+## left untouched here.
 
 ## Plain data holder for one building type. Ports are Vector2i grid-cell
 ## *offsets* from the building's own anchor cell (not directions on a
@@ -56,9 +62,6 @@ class Kind:
 		upgrade_perks = p_upgrade_perks
 		build_labor = p_build_labor
 
-var _kinds: Dictionary = {}
-var _ordered_ids: Array = []
-
 
 ## Godot lifecycle hook: registers every building type. Town Hall is the
 ## tech-tree root (unlock_cost 0 = always available, no prerequisite) since
@@ -88,17 +91,10 @@ func _ready() -> void:
 		16.0
 	))
 
-## Adds `kind` to the catalog, preserving registration order for UI display.
-func _register(kind: Kind) -> void:
-	_kinds[kind.id] = kind
-	_ordered_ids.append(kind.id)
-
-## Returns the Kind for `id`, or null if `id` isn't a building kind at all
-## (used by World to tell "is this a building placement?" apart from a
-## factory-piece placement).
+## Thin covariant override: keeps callers' `var kind := BuildingKinds.get_kind(id)`
+## statically typed as `Kind` (with BuildingKinds' own fields). Returns null
+## if `id` isn't a building kind at all (used by World to tell "is this a
+## building placement?" apart from a factory-piece placement) -- Registry's
+## default `_default_id = ""` already gives that behavior.
 func get_kind(id: String) -> Kind:
-	return _kinds.get(id, null)
-
-## Every registered building id, in registration order.
-func get_ordered_ids() -> Array:
-	return _ordered_ids
+	return super.get_kind(id)

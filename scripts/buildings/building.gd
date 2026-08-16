@@ -1,4 +1,4 @@
-extends Node3D
+extends BuildableStructure
 ## The player's home base -- built via Build Mode, not present at game start
 ## (see World's founder blobs for what the player starts with instead).
 ## Periodically spawns a free "worker" blob (scaled by the "growth"
@@ -10,14 +10,15 @@ extends Node3D
 ## Blobs actually deposit at `spawn_point`, not this node's own position --
 ## the building's solid collider extends well past its center, so walking
 ## to the center directly would mean trying to stand inside a wall.
+##
+## `kind_id`, `upgrade_level`, `durability`/`max_durability`,
+## `is_under_construction`/`construction_progress`, and
+## `add_construction_progress()` all come from BuildableStructure (see
+## scripts/core/buildable_structure.gd) -- this file only adds what's
+## actually specific to a Town Hall: the free-spawn timer, hiring, and
+## accepting belt deliveries straight into the stockpile.
 
 @export var blob_scene: PackedScene = preload("res://scenes/units/blob/blob.tscn")
-
-## Which BuildingKinds entry this instance is -- set by World at placement
-## time, before this node enters the tree. Used to look up display name,
-## durability, and per-level upgrade costs/perks for BuildingMenu's
-## generic "This Building" info section.
-@export var kind_id: String = "town_hall"
 
 const AUTO_SPAWN_KIND := "worker"
 const BASE_SPAWN_INTERVAL := 60.0
@@ -25,21 +26,6 @@ const BASE_SPAWN_INTERVAL := 60.0
 ## level 3's perk is qualitative -- see _on_spawn_timer_timeout).
 const SPAWN_INTERVAL_REDUCTION_PER_LEVEL := 0.15
 const HIRE_COST_REDUCTION_AT_LEVEL_2 := 0.1
-
-## Per-instance upgrade progress (0..BuildingKinds.get_kind(kind_id).upgrade_costs.size()),
-## bought via BuildingMenu's "This Building" section -- distinct from
-## GameManager's account-wide upgrades (speed/strength/...), which apply to
-## every blob regardless of which building is open.
-var upgrade_level := 0
-var durability: int
-var max_durability: int
-
-## Whether this instance is still being built (see add_construction_progress)
-## -- true for every freshly-placed building, since Town Hall/Storage Depot
-## are only ever created via Build Mode, never present at game start.
-## Blocked from spawning/hiring/upgrading/accepting deliveries until done.
-var is_under_construction := true
-var construction_progress := 0.0
 
 @onready var spawn_point: Marker3D = $SpawnPoint
 @onready var spawn_timer: Timer = $SpawnTimer
@@ -57,41 +43,20 @@ var construction_progress := 0.0
 ## "just started" construction visual.
 func _ready() -> void:
 	add_to_group("buildings")
-	var kind := BuildingKinds.get_kind(kind_id)
-	max_durability = kind.max_durability
-	durability = max_durability
+	_setup_durability()
 	spawn_timer.timeout.connect(_on_spawn_timer_timeout)
 	GameManager.upgrade_changed.connect(_on_upgrade_changed)
 	_apply_growth_upgrade()
 	_apply_construction_visual(0.0)
 
-## Called by whichever blob(s) are in ConstructState with this building as
-## their pending_build_target, once per physics frame. Finishes
-## construction once BuildingKinds' build_labor is reached.
-func add_construction_progress(amount: float) -> void:
-	if not is_under_construction:
-		return
-	construction_progress += amount
-	var required: float = BuildingKinds.get_kind(kind_id).build_labor
-	if construction_progress >= required:
-		is_under_construction = false
-		_apply_construction_visual(1.0)
-		Effects.spawn_command_marker(get_parent(), global_position + Vector3(0.0, 0.05, 0.0), Color(1.0, 0.85, 0.3, 1.0))
-	else:
-		_apply_construction_visual(construction_progress / required)
-
-## Scales the purely-cosmetic Walls/Roof meshes (never the "Solid"
-## collider, which stays full-size throughout so the building already
-## occupies/blocks its cell the moment it's placed) so an in-progress
-## building visibly rises from a low foundation up to its full height.
-## Walls' own position.y is repositioned (not just its scale) so its base
-## stays anchored to the ground instead of shrinking toward its own
-## midpoint and sinking half underground.
-func _apply_construction_visual(fraction: float) -> void:
-	var height_fraction: float = lerp(0.15, 1.0, clamp(fraction, 0.0, 1.0))
-	_walls_mesh.scale.y = height_fraction
-	_walls_mesh.position.y = _walls_base_position.y * height_fraction
-	_roof_mesh.position.y = _roof_base_position.y * height_fraction
+## Template Method hook (see BuildableStructure._apply_construction_visual):
+## the Walls mesh scales AND repositions as it rises; the Roof only
+## repositions (its own height never changed, only where it sits).
+func _construction_meshes() -> Array:
+	return [
+		{"mesh": _walls_mesh, "base_position": _walls_base_position},
+		{"mesh": _roof_mesh, "base_position": _roof_base_position, "scales": false},
+	]
 
 ## Signal handler for GameManager.upgrade_changed: only the "growth" stat
 ## affects this building, and only its own spawn-timer duration.
@@ -107,18 +72,12 @@ func _apply_growth_upgrade() -> void:
 	var level_reduction: float = 1.0 - min(upgrade_level, 2) * SPAWN_INTERVAL_REDUCTION_PER_LEVEL
 	spawn_timer.wait_time = (BASE_SPAWN_INTERVAL / GameManager.get_growth_multiplier()) * level_reduction
 
-## Attempts to spend this building's next upgrade level's wood cost (see
-## BuildingKinds.upgrade_costs). Returns whether it went through; the
-## caller (BuildingMenu) is responsible for refreshing its own display.
+## Extends BuildableStructure's shared upgrade-purchase logic with the one
+## bit of behavior specific to a Town Hall: a successful purchase also
+## speeds up the free-spawn timer.
 func try_upgrade() -> bool:
-	if is_under_construction:
+	if not super.try_upgrade():
 		return false
-	var kind := BuildingKinds.get_kind(kind_id)
-	if upgrade_level >= kind.upgrade_costs.size():
-		return false
-	if not GameManager.try_spend_wood(kind.upgrade_costs[upgrade_level]):
-		return false
-	upgrade_level += 1
 	_apply_growth_upgrade()
 	return true
 

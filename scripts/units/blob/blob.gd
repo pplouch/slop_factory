@@ -169,7 +169,7 @@ func _ready() -> void:
 	super._ready()
 	add_to_group("blobs")
 	_apply_kind_look()
-	_ring_material = selection_ring.mesh.material.duplicate()
+	_ring_material = MaterialUtil.duplicated_material(selection_ring)
 	selection_ring.set_surface_override_material(0, _ring_material)
 	_refresh_stats()
 	health = max_health
@@ -221,7 +221,7 @@ func _apply_kind_look() -> void:
 	var kind := BlobKinds.get_kind(kind_id)
 	_kind_scale = kind.body_scale
 
-	_body_material = torso_mesh.mesh.material.duplicate()
+	_body_material = MaterialUtil.duplicated_material(torso_mesh)
 	var hue := fposmod(kind.hue + randf_range(-0.03, 0.03), 1.0)
 	_body_material.albedo_color = Color.from_hsv(hue, kind.saturation, kind.value)
 	for mesh_inst in _body_meshes:
@@ -603,35 +603,25 @@ func _update_limb_animation(delta: float) -> void:
 	var is_harvesting: bool = current_state is HarvestingState
 
 	if is_moving:
-		_gait_phase += delta * TAU * GAIT_CYCLES_PER_SECOND * (velocity.length() / max(speed, 0.01))
-		var swing := sin(_gait_phase) * GAIT_AMPLITUDE
-		left_arm_pivot.rotation.x = swing
-		right_arm_pivot.rotation.x = -swing
-		left_leg_pivot.rotation.x = -swing
-		right_leg_pivot.rotation.x = swing
+		_gait_phase = LimbAnimator.apply_gait_swing(_gait_phase, delta, GAIT_CYCLES_PER_SECOND, GAIT_AMPLITUDE,
+			velocity.length(), speed, left_arm_pivot, right_arm_pivot, left_leg_pivot, right_leg_pivot)
 	elif is_harvesting:
+		# Not apply_gait_swing's opposite-limb shape -- only the right arm
+		# chops, so this stays bespoke rather than forcing it through the
+		# shared 4-pivot helper.
 		_gait_phase += delta * TAU * HARVEST_CYCLES_PER_SECOND
 		var chop: float = (sin(_gait_phase) * 0.5 + 0.5) * HARVEST_AMPLITUDE
 		right_arm_pivot.rotation.x = lerp(right_arm_pivot.rotation.x, -chop, delta * LIMB_RESET_SPEED)
-		left_arm_pivot.rotation.x = lerp(left_arm_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		left_leg_pivot.rotation.x = lerp(left_leg_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		right_leg_pivot.rotation.x = lerp(right_leg_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+		LimbAnimator.ease_to_rest(delta, LIMB_RESET_SPEED, [left_arm_pivot, left_leg_pivot, right_leg_pivot])
 	else:
-		left_arm_pivot.rotation.x = lerp(left_arm_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		right_arm_pivot.rotation.x = lerp(right_arm_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		left_leg_pivot.rotation.x = lerp(left_leg_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		right_leg_pivot.rotation.x = lerp(right_leg_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+		LimbAnimator.ease_to_rest(delta, LIMB_RESET_SPEED, [left_arm_pivot, right_arm_pivot, left_leg_pivot, right_leg_pivot])
 
 ## Plays a quick forward punch with the right arm the instant an attack
 ## actually lands (see _update_combat), taking over from the regular gait/
 ## harvest animation for ATTACK_SWING_DURATION so the two don't fight.
 func _play_attack_swing() -> void:
 	_attack_swing_timer = ATTACK_SWING_DURATION
-	var tween := create_tween()
-	tween.tween_property(right_arm_pivot, "rotation:x", -1.1, ATTACK_SWING_DURATION * 0.4) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tween.tween_property(right_arm_pivot, "rotation:x", 0.0, ATTACK_SWING_DURATION * 0.6) \
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	LimbAnimator.play_punch_swing(right_arm_pivot, ATTACK_SWING_DURATION)
 
 ## Closest member of the "enemies" group within `range`, or null.
 func _find_nearest_enemy_in_range(range_limit: float) -> Node:

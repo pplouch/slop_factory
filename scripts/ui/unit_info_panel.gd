@@ -269,7 +269,11 @@ func _refresh_live_fields() -> void:
 ## left corner stays pinned to the same screen margin regardless of size --
 ## capped at MAX_PANEL_SIZE_FRACTION of the viewport, with the existing
 ## ScrollContainer taking over for whatever doesn't fit (e.g. many kinds
-## selected at once).
+## selected at once). The actual clamp math is shared with BuildingMenu via
+## PanelAutofit (see scripts/core/panel_autofit.gd); only the natural-size
+## computation (summed across several sub-containers, since this panel has
+## no single VBox the way BuildingMenu does) and the final bottom-left-
+## pinned `position` below are specific to this panel.
 func _fit_to_content() -> void:
 	var boxes_natural: Vector2 = boxes_container.get_combined_minimum_size()
 	var orders_natural: Vector2 = orders_row.get_combined_minimum_size()
@@ -281,11 +285,7 @@ func _fit_to_content() -> void:
 	) + PANEL_PADDING
 
 	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
-	var max_size := Vector2(viewport_size.x * MAX_PANEL_SIZE_FRACTION.x, viewport_size.y * MAX_PANEL_SIZE_FRACTION.y)
-	var target := Vector2(
-		clamp(natural.x, MIN_PANEL_SIZE.x, max_size.x),
-		clamp(natural.y, MIN_PANEL_SIZE.y, max_size.y)
-	)
+	var target := PanelAutofit.resolve_size(natural, MIN_PANEL_SIZE, MAX_PANEL_SIZE_FRACTION, viewport_size)
 	panel.custom_minimum_size = target
 	panel.size = target
 	panel.position = Vector2(PANEL_MARGIN, viewport_size.y - PANEL_MARGIN - target.y)

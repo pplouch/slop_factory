@@ -117,7 +117,7 @@ func _apply_kind_look(kind: EnemyKinds.Kind) -> void:
 	_hum_body.visible = _body_type == "humanoid"
 
 	var meshes: Array = _blob_meshes_for_type()
-	_body_material = meshes[0].mesh.material.duplicate()
+	_body_material = MaterialUtil.duplicated_material(meshes[0])
 	_body_material.albedo_color = Color.from_hsv(kind.hue, 0.55, 0.35 if kind.hue == 0.0 else 0.6)
 	for mesh_inst in meshes:
 		mesh_inst.set_surface_override_material(0, _body_material)
@@ -235,32 +235,18 @@ func _update_limb_animation(delta: float) -> void:
 ## back-left the other way), the classic four-legged walk cycle.
 func _update_quadruped_gait(delta: float, is_moving: bool, speed: float) -> void:
 	if is_moving:
-		_gait_phase += delta * TAU * GAIT_CYCLES_PER_SECOND * (speed / max(move_speed, 0.01))
-		var swing := sin(_gait_phase) * GAIT_AMPLITUDE
-		_quad_leg_fl.rotation.x = swing
-		_quad_leg_br.rotation.x = swing
-		_quad_leg_fr.rotation.x = -swing
-		_quad_leg_bl.rotation.x = -swing
+		_gait_phase = LimbAnimator.apply_gait_swing(_gait_phase, delta, GAIT_CYCLES_PER_SECOND, GAIT_AMPLITUDE,
+			speed, move_speed, _quad_leg_fl, _quad_leg_fr, _quad_leg_bl, _quad_leg_br)
 	else:
-		_quad_leg_fl.rotation.x = lerp(_quad_leg_fl.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		_quad_leg_fr.rotation.x = lerp(_quad_leg_fr.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		_quad_leg_bl.rotation.x = lerp(_quad_leg_bl.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		_quad_leg_br.rotation.x = lerp(_quad_leg_br.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+		LimbAnimator.ease_to_rest(delta, LIMB_RESET_SPEED, [_quad_leg_fl, _quad_leg_fr, _quad_leg_bl, _quad_leg_br])
 
 ## Same opposite arm/leg swing Blob uses for its own humanoid rig.
 func _update_humanoid_gait(delta: float, is_moving: bool, speed: float) -> void:
 	if is_moving:
-		_gait_phase += delta * TAU * GAIT_CYCLES_PER_SECOND * (speed / max(move_speed, 0.01))
-		var swing := sin(_gait_phase) * GAIT_AMPLITUDE
-		_hum_left_arm_pivot.rotation.x = swing
-		_hum_right_arm_pivot.rotation.x = -swing
-		_hum_left_leg_pivot.rotation.x = -swing
-		_hum_right_leg_pivot.rotation.x = swing
+		_gait_phase = LimbAnimator.apply_gait_swing(_gait_phase, delta, GAIT_CYCLES_PER_SECOND, GAIT_AMPLITUDE,
+			speed, move_speed, _hum_left_arm_pivot, _hum_right_arm_pivot, _hum_left_leg_pivot, _hum_right_leg_pivot)
 	else:
-		_hum_left_arm_pivot.rotation.x = lerp(_hum_left_arm_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		_hum_right_arm_pivot.rotation.x = lerp(_hum_right_arm_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		_hum_left_leg_pivot.rotation.x = lerp(_hum_left_leg_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
-		_hum_right_leg_pivot.rotation.x = lerp(_hum_right_leg_pivot.rotation.x, 0.0, delta * LIMB_RESET_SPEED)
+		LimbAnimator.ease_to_rest(delta, LIMB_RESET_SPEED, [_hum_left_arm_pivot, _hum_right_arm_pivot, _hum_left_leg_pivot, _hum_right_leg_pivot])
 
 ## No limbs to swing on the amorphous blob rig -- a squash/stretch bounce
 ## while moving instead, easing back to a neutral scale otherwise.
@@ -280,19 +266,21 @@ func _update_blob_bounce(delta: float, is_moving: bool, speed: float) -> void:
 ## amorphous blob rig.
 func _play_attack_animation() -> void:
 	_attack_swing_timer = ATTACK_SWING_DURATION
-	var tween := create_tween()
 	match _body_type:
 		"quadruped":
+			# A whole-body lunge/dip, not a limb swing -- genuinely different
+			# from LimbAnimator's punch shape, so this stays bespoke.
+			var tween := create_tween()
 			tween.tween_property(_quad_body, "rotation:x", -0.35, ATTACK_SWING_DURATION * 0.4) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 			tween.tween_property(_quad_body, "rotation:x", 0.0, ATTACK_SWING_DURATION * 0.6) \
 				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 		"humanoid":
-			tween.tween_property(_hum_right_arm_pivot, "rotation:x", -1.1, ATTACK_SWING_DURATION * 0.4) \
-				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-			tween.tween_property(_hum_right_arm_pivot, "rotation:x", 0.0, ATTACK_SWING_DURATION * 0.6) \
-				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+			LimbAnimator.play_punch_swing(_hum_right_arm_pivot, ATTACK_SWING_DURATION)
 		_:
+			# No limbs on the amorphous blob rig -- a sharp squash-lunge on
+			# its one mesh instead.
+			var tween := create_tween()
 			tween.tween_property(_blob_mesh, "scale", Vector3(1.25, 0.65, 1.25), ATTACK_SWING_DURATION * 0.4) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 			tween.tween_property(_blob_mesh, "scale", Vector3(1.0, 0.9, 1.0), ATTACK_SWING_DURATION * 0.6) \
