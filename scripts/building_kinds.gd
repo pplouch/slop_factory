@@ -80,6 +80,13 @@ func _ready() -> void:
 		["Buffer capacity +2", "Buffer capacity +2 again"],
 		18.0
 	))
+	_register(Kind.new(
+		"water_tank", "Water Tank", "res://scenes/factory/water_tank.tscn", 35,
+		[Vector2i(0, -1)], [Vector2i(0, 1)], 50, "town_hall",
+		90, [30, 60],
+		["Buffer capacity +4", "Buffer capacity +4 again"],
+		16.0
+	))
 
 ## Adds `kind` to the catalog, preserving registration order for UI display.
 func _register(kind: Kind) -> void:

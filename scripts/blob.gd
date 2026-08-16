@@ -108,6 +108,14 @@ var pending_harvest_node: Node = null
 ## helping build, if any (see command_build/ConstructState).
 var pending_build_target: Node = null
 
+## "", "weapon", or "bucket" -- which gathering tool this blob currently
+## carries. Animals (food) require "weapon" and water sources require
+## "bucket" (see World._issue_harvest_orders' ITEM_REQUIRED_FOR_RESOURCE);
+## every other resource type is unrestricted. Set via try_equip, itself
+## driven by UnitInfoPanel's Equip buttons (World._order_equip spends the
+## wood).
+var equipped_item: String = ""
+
 ## Remaining grid-cell waypoints (world positions) between here and
 ## final_target, computed by World's pathing grid when the direct line is
 ## blocked (see _set_destination/_advance_along_path). Empty means "just
@@ -138,7 +146,6 @@ func _ready() -> void:
 	_refresh_stats()
 	health = max_health
 	GameManager.upgrade_changed.connect(_on_upgrade_changed)
-	GameManager.colony_supply_changed.connect(_refresh_stats)
 	_transition_to(IdleState.new())
 	_start_idle_bob()
 
@@ -157,18 +164,14 @@ func _on_upgrade_changed(_stat: String, _level: int) -> void:
 	_refresh_stats()
 
 ## Recomputes every stat (including combat ones) from GameManager's current
-## upgrade levels layered with this blob's kind multipliers and the
-## colony's current food/water status (see
-## GameManager.get_starvation_speed_multiplier -- a starving/dehydrated
-## colony works slower and harvests less until resupplied). Called on
-## startup, whenever an upgrade is purchased, and whenever the colony's
-## starving/dehydrated status flips. Health is clamped rather than reset,
-## so a refresh never fully heals a hurt blob as a side effect.
+## upgrade levels layered with this blob's kind multipliers. Called on
+## startup and whenever an upgrade is purchased. Health is clamped rather
+## than reset, so a refresh never fully heals a hurt blob as a side effect.
 func _refresh_stats() -> void:
 	var kind := BlobKinds.get_kind(kind_id)
-	speed = BASE_SPEED * GameManager.get_speed_multiplier() * kind.speed_mult * GameManager.get_starvation_speed_multiplier()
+	speed = BASE_SPEED * GameManager.get_speed_multiplier() * kind.speed_mult
 	carry_capacity = max(1, int(round((BASE_CARRY_CAPACITY + GameManager.get_capacity_bonus()) * kind.capacity_mult)))
-	harvest_amount = max(1, int(round(BASE_HARVEST_AMOUNT * GameManager.get_strength_multiplier() * kind.harvest_mult * GameManager.get_starvation_harvest_multiplier())))
+	harvest_amount = max(1, int(round(BASE_HARVEST_AMOUNT * GameManager.get_strength_multiplier() * kind.harvest_mult)))
 	harvest_interval = BASE_HARVEST_INTERVAL / GameManager.get_efficiency_multiplier()
 	build_rate = BASE_BUILD_RATE * kind.build_mult * GameManager.get_efficiency_multiplier()
 
@@ -291,6 +294,13 @@ func command_explore() -> void:
 	pending_build_target = null
 	_transition_to(ExploreState.new(global_position))
 	_acknowledge_order()
+
+## Equips this blob with `item` ("weapon" or "bucket", see equipped_item),
+## paid for and applied by World._order_equip. Purely a state change --
+## takes effect immediately, no travel/animation required.
+func try_equip(item: String) -> void:
+	equipped_item = item
+	Effects.spawn_floating_text(get_parent(), global_position + Vector3(0.0, 1.4, 0.0), "+%s" % item.capitalize(), Color(0.85, 0.85, 0.3))
 
 ## Switches the state machine to `next_state`, calling exit/enter hooks on
 ## the outgoing/incoming states so they can do one-time setup/teardown.

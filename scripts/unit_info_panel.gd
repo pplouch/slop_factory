@@ -27,6 +27,8 @@ extends CanvasLayer
 signal patrol_requested
 signal hold_requested
 signal explore_requested
+signal equip_weapon_requested
+signal equip_bucket_requested
 
 const CHIP_SIZE := Vector2(16, 10)
 const CHIP_GAP := 3.0
@@ -40,6 +42,9 @@ const MAX_PANEL_SIZE_FRACTION := Vector2(0.5, 0.6)
 ## Panel's stylebox padding, so it's added back in here.
 const PANEL_PADDING := Vector2(30.0, 24.0)
 const PANEL_MARGIN := 16.0
+## Must match World.EQUIP_COST -- duplicated here only for button-label/
+## affordability display, World is what actually spends the wood.
+const EQUIP_COST := 10
 
 @onready var panel: PanelContainer = $Panel
 @onready var boxes_container: VBoxContainer = $Panel/OuterVBox/Scroll/BoxesVBox
@@ -48,6 +53,10 @@ const PANEL_MARGIN := 16.0
 @onready var patrol_button: Button = $Panel/OuterVBox/OrdersRow/PatrolButton
 @onready var hold_button: Button = $Panel/OuterVBox/OrdersRow/HoldButton
 @onready var explore_button: Button = $Panel/OuterVBox/OrdersRow/ExploreButton
+@onready var equip_row: HBoxContainer = $Panel/OuterVBox/EquipRow
+@onready var equip_separator: HSeparator = $Panel/OuterVBox/EquipSeparator
+@onready var equip_weapon_button: Button = $Panel/OuterVBox/EquipRow/EquipWeaponButton
+@onready var equip_bucket_button: Button = $Panel/OuterVBox/EquipRow/EquipBucketButton
 
 var _tracked_group: Array = []
 ## blob instance -> its chip's foreground (health-fill) ColorRect, so a
@@ -56,6 +65,7 @@ var _group_chips: Dictionary = {}
 ## Only populated when exactly one blob is tracked (see _make_kind_box).
 var _solo_task_label: Label = null
 var _solo_inventory_label: Label = null
+var _solo_equipped_label: Label = null
 
 
 ## Godot lifecycle hook: starts hidden and wires the standing-order buttons
@@ -65,6 +75,18 @@ func _ready() -> void:
 	patrol_button.pressed.connect(func(): patrol_requested.emit())
 	hold_button.pressed.connect(func(): hold_requested.emit())
 	explore_button.pressed.connect(func(): explore_requested.emit())
+	equip_weapon_button.pressed.connect(func(): equip_weapon_requested.emit())
+	equip_bucket_button.pressed.connect(func(): equip_bucket_requested.emit())
+	GameManager.resource_changed.connect(func(_type, _total): _refresh_equip_buttons())
+	_refresh_equip_buttons()
+
+## Greys out an Equip button once the player can't afford outfitting every
+## currently-selected blob that doesn't already have it (see
+## World._order_equip, which charges per blob actually equipped).
+func _refresh_equip_buttons() -> void:
+	var count: int = _tracked_group.size() if not _tracked_group.is_empty() else 1
+	equip_weapon_button.disabled = not GameManager.can_afford_cost(EQUIP_COST * count)
+	equip_bucket_button.disabled = not GameManager.can_afford_cost(EQUIP_COST * count)
 
 ## Starts displaying (and continuously refreshing) a single blob. Just the
 ## size-1 case of show_group -- kept as a separate entry point since World
@@ -111,6 +133,7 @@ func _rebuild_view() -> void:
 	_group_chips.clear()
 	_solo_task_label = null
 	_solo_inventory_label = null
+	_solo_equipped_label = null
 
 	var groups: Dictionary = {}
 	for blob in _tracked_group:
@@ -122,6 +145,7 @@ func _rebuild_view() -> void:
 		boxes_container.add_child(_make_kind_box(BlobKinds.get_kind(kind_id), groups[kind_id]))
 
 	_refresh_live_fields()
+	_refresh_equip_buttons()
 	_fit_to_content()
 
 ## Builds one colored box for `kind`, containing its name+count, stat
@@ -184,6 +208,10 @@ func _make_kind_box(kind, blobs_of_kind: Array) -> Control:
 		_solo_inventory_label.add_theme_font_size_override("font_size", 12)
 		vbox.add_child(_solo_inventory_label)
 
+		_solo_equipped_label = Label.new()
+		_solo_equipped_label.add_theme_font_size_override("font_size", 12)
+		vbox.add_child(_solo_equipped_label)
+
 	return box
 
 ## Builds one health-chip Control (dark background + colored fill sized to
@@ -233,6 +261,8 @@ func _refresh_live_fields() -> void:
 			parts.append("%s %d" % [String(resource_type).capitalize(), amount])
 		var carrying: String = ", ".join(parts) if not parts.is_empty() else "nothing"
 		_solo_inventory_label.text = "Carrying: %s (%d/%d)" % [carrying, total, blob.carry_capacity]
+	if _solo_equipped_label:
+		_solo_equipped_label.text = "Equipped: %s" % (blob.equipped_item.capitalize() if blob.equipped_item != "" else "nothing")
 
 ## Recomputes the panel's size from its current content (rather than the
 ## fixed box the .tscn used to hardcode) and repositions it so its bottom-
@@ -243,10 +273,11 @@ func _refresh_live_fields() -> void:
 func _fit_to_content() -> void:
 	var boxes_natural: Vector2 = boxes_container.get_combined_minimum_size()
 	var orders_natural: Vector2 = orders_row.get_combined_minimum_size()
-	var separator_height: float = orders_separator.get_combined_minimum_size().y
+	var equip_natural: Vector2 = equip_row.get_combined_minimum_size()
+	var separators_height: float = orders_separator.get_combined_minimum_size().y + equip_separator.get_combined_minimum_size().y
 	var natural := Vector2(
-		max(boxes_natural.x, orders_natural.x),
-		boxes_natural.y + separator_height + orders_natural.y
+		max(boxes_natural.x, max(orders_natural.x, equip_natural.x)),
+		boxes_natural.y + separators_height + orders_natural.y + equip_natural.y
 	) + PANEL_PADDING
 
 	var viewport_size: Vector2 = get_viewport().get_visible_rect().size

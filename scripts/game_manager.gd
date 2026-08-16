@@ -18,11 +18,6 @@ signal upgrade_changed(stat: String, level: int)
 ## Fired whenever a building type is unlocked. BuildPalette listens to reveal
 ## its button; BuildingMenu listens to drop it from the "Unlock Buildings" list.
 signal building_unlocked(building_id: String)
-## Fired whenever the colony's starving/dehydrated status actually changes
-## (not every consumption tick -- only on a flip). Blob listens to
-## immediately apply/lift the starvation penalty on units already in the
-## field, the same way it reacts to upgrade_changed.
-signal colony_supply_changed
 
 ## Every upgradeable stat, in the order BuildingMenu displays them. Adding a
 ## new upgrade is: add it here, add its display name and per-level bonus
@@ -79,21 +74,6 @@ var upgrade_levels: Dictionary = {
 var unlocked_buildings: Dictionary = {
 	"town_hall": true,
 }
-
-# -- Colony food/water (see consume_colony_supplies) --
-# Deliberately a colony-wide upkeep rather than per-blob hunger/thirst
-# meters: every tick, the whole crew's food/water need is drained from the
-# shared stockpile at once. Much simpler to reason about and to display
-# (two more resource types in the same stockpile HUD already shows) while
-# still making "keep food and water flowing in" a real ongoing concern.
-const COLONY_FOOD_PER_BLOB := 1
-const COLONY_WATER_PER_BLOB := 1
-const STARVATION_SPEED_MULTIPLIER := 0.6
-const STARVATION_HARVEST_MULTIPLIER := 0.6
-
-var _colony_starving := false
-var _colony_dehydrated := false
-
 
 ## Godot lifecycle hook: marks the moment the difficulty ramp starts
 ## counting from.
@@ -215,40 +195,3 @@ func try_unlock_building(building_id: String) -> bool:
 	building_unlocked.emit(building_id)
 	return true
 
-## Drains `blob_count` worth of food/water upkeep from the stockpile (see
-## the "colony food/water" section above). Called periodically by World,
-## which owns the timer and the actual blob count -- GameManager itself
-## never queries the scene tree. Whichever of food/water can't be fully
-## paid leaves the colony starving/dehydrated (no partial-payment
-## shortfall carried over -- next tick starts fresh) until enough is
-## stockpiled again; colony_supply_changed only fires on an actual flip,
-## not every tick, so listeners don't refresh needlessly.
-func consume_colony_supplies(blob_count: int) -> void:
-	if blob_count <= 0:
-		return
-	var still_starving: bool = get_resource("food") < blob_count * COLONY_FOOD_PER_BLOB
-	var still_dehydrated: bool = get_resource("water") < blob_count * COLONY_WATER_PER_BLOB
-	if not still_starving:
-		add_resource("food", -blob_count * COLONY_FOOD_PER_BLOB)
-	if not still_dehydrated:
-		add_resource("water", -blob_count * COLONY_WATER_PER_BLOB)
-
-	if still_starving != _colony_starving or still_dehydrated != _colony_dehydrated:
-		_colony_starving = still_starving
-		_colony_dehydrated = still_dehydrated
-		colony_supply_changed.emit()
-
-## Whether the colony currently lacks enough food or water to feed
-## everyone -- used by BuildingMenu-style UI and by Blob's stat refresh.
-func is_colony_starving() -> bool:
-	return _colony_starving or _colony_dehydrated
-
-## Multiplier blobs should apply to speed while the colony is starving/
-## dehydrated (1.0 the rest of the time).
-func get_starvation_speed_multiplier() -> float:
-	return STARVATION_SPEED_MULTIPLIER if is_colony_starving() else 1.0
-
-## Multiplier blobs should apply to harvest yield while the colony is
-## starving/dehydrated (1.0 the rest of the time).
-func get_starvation_harvest_multiplier() -> float:
-	return STARVATION_HARVEST_MULTIPLIER if is_colony_starving() else 1.0

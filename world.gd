@@ -30,6 +30,13 @@ const COLOR_PATROL := Color(0.4, 0.7, 1.0)
 const MAX_HARVEST_SPREAD_RADIUS := 16.0
 const MAX_BLOBS_PER_NODE := 2
 
+# -- Gathering tools (see Blob.equipped_item / _order_equip) --
+# Animals (food) and water sources are only harvestable by a blob carrying
+# the matching tool -- everything else (wood/stone/mushroom/...) stays
+# unrestricted, same as it always was.
+const ITEM_REQUIRED_FOR_RESOURCE := {"food": "weapon", "water": "bucket"}
+const EQUIP_COST := 10
+
 # -- Founder crew --
 # There's no building at game start (see the BUILD MODE section) -- the
 # player has to construct the Town Hall themselves. These few blobs exist
@@ -60,9 +67,6 @@ const PATHING_GRID_HALF_SIZE := 90.0
 # chunk's biome (see Biomes), so kind and difficulty stay biome-appropriate.
 const ENEMY_TARGET_COUNT := 3
 const ENEMY_POPULATION_CHECK_INTERVAL := 20.0
-
-# -- Colony food/water upkeep (see GameManager.consume_colony_supplies) --
-const COLONY_SUPPLY_INTERVAL := 30.0
 
 # -- Build mode / factory automation tuning --
 # Extractors, belts, processors, and walls snap to a square grid so belt
@@ -159,12 +163,6 @@ func _ready() -> void:
 	add_child(population_timer)
 	population_timer.start()
 
-	var colony_supply_timer := Timer.new()
-	colony_supply_timer.wait_time = COLONY_SUPPLY_INTERVAL
-	colony_supply_timer.timeout.connect(_tick_colony_supplies)
-	add_child(colony_supply_timer)
-	colony_supply_timer.start()
-
 	build_palette.toggle_requested.connect(_toggle_build_mode)
 	build_palette.kind_selected.connect(_on_build_kind_selected)
 
@@ -178,6 +176,8 @@ func _ready() -> void:
 	unit_info_panel.patrol_requested.connect(_order_pending_patrol)
 	unit_info_panel.hold_requested.connect(_order_hold)
 	unit_info_panel.explore_requested.connect(_order_explore)
+	unit_info_panel.equip_weapon_requested.connect(func(): _order_equip("weapon"))
+	unit_info_panel.equip_bucket_requested.connect(func(): _order_equip("bucket"))
 
 ## Godot per-frame hook: periodically (not every frame -- see
 ## CHUNK_CHECK_INTERVAL) makes sure every chunk within CHUNK_LOAD_RADIUS of
@@ -223,13 +223,6 @@ func _spawn_one_enemy() -> void:
 func _maintain_enemy_population() -> void:
 	if get_tree().get_nodes_in_group("enemies").size() < ENEMY_TARGET_COUNT:
 		_spawn_one_enemy()
-
-## Signal handler for the colony-supply timer: drains this tick's food/
-## water upkeep for the current blob count. World owns the population
-## query; GameManager owns the actual stockpile math (see
-## GameManager.consume_colony_supplies).
-func _tick_colony_supplies() -> void:
-	GameManager.consume_colony_supplies(get_tree().get_nodes_in_group("blobs").size())
 
 ## Signal handler for DebugMenu.toggle_requested.
 func _toggle_debug_menu() -> void:
@@ -563,6 +556,21 @@ func _order_explore() -> void:
 	for blob in selected_blobs:
 		blob.command_explore()
 
+## Equips every currently-selected blob that doesn't already have `item`
+## ("weapon" or "bucket") with it, spending EQUIP_COST wood per blob
+## actually equipped (already-equipped blobs are free, not double-charged).
+## Silently does nothing if the player can't afford equipping all of them.
+## Shared by UnitInfoPanel's Equip Weapon/Equip Bucket buttons.
+func _order_equip(item: String) -> void:
+	var needing: Array = selected_blobs.filter(func(b): return b.equipped_item != item)
+	if needing.is_empty():
+		return
+	var cost: int = EQUIP_COST * needing.size()
+	if not GameManager.try_spend_wood(cost):
+		return
+	for blob in needing:
+		blob.try_equip(item)
+
 ## Fires a physics ray from the camera through the given screen position and
 ## returns the first hit whose collision layer matches `mask` (empty
 ## Dictionary if nothing was hit). Shared by every click/hover check below.
@@ -715,8 +723,17 @@ func _issue_harvest_orders(clicked_node: Node) -> void:
 	if candidates.is_empty():
 		candidates.append(clicked_node)
 
+	# Animals (food) and water sources need the matching tool equipped
+	# (see Blob.equipped_item) -- everything else is unrestricted. A blob
+	# missing the right tool is left alone rather than silently ignored, so
+	# the player understands why nothing happened.
+	var required_item: String = ITEM_REQUIRED_FOR_RESOURCE.get(target_type, "")
+
 	var assigned_count: Dictionary = {}
 	for blob in selected_blobs:
+		if required_item != "" and blob.equipped_item != required_item:
+			Effects.spawn_floating_text(self, blob.global_position + Vector3(0.0, 1.6, 0.0), "Needs a %s!" % required_item.capitalize(), Color(1.0, 0.35, 0.3))
+			continue
 		var best_node: Node = null
 		var best_dist := INF
 		for n in candidates:
