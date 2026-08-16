@@ -1,0 +1,14 @@
+---
+name: feedback-slop-factory-git-workflow
+description: Git commit permission and Godot invocation preferences for the slop_factory project
+metadata:
+  type: feedback
+---
+
+In the `slop_factory` Godot project (`c:\Users\ezorken\Dev\slop_factory`), commit changes without asking for confirmation first — the user explicitly granted standing permission ("You can commit without asking too"), overriding the general default of confirming before every commit. Still follow good commit hygiene (stage specific files, one logical change per commit, headless-verify before committing per `CLAUDE.md`'s testing conventions) — the exception is only the confirmation step, not care in what gets committed.
+
+**Why:** Said directly when pausing a long multi-session feature-backlog effort and asking to gather handoff info for next time.
+
+**How to apply:** Applies specifically to this project/repo, not a general override of the "never commit without being asked" default elsewhere. If ever unsure whether a specific change is commit-worthy (e.g. it touches something outside the current task's scope), it's still fine to just commit as part of normal small-step work — the user has already opted out of the per-commit prompt.
+
+See [[project-slop-factory-backlog-context]] for the broader multi-session workflow this fits into.
