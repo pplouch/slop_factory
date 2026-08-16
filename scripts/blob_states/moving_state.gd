@@ -16,11 +16,19 @@ func is_travelling() -> bool:
 	return true
 
 ## Steers the blob toward its current waypoint and checks for arrival at the
-## final destination.
+## final destination -- or, if a group order gave this blob some
+## move_tolerance and it's stuck (another blob already standing on the
+## exact point), accepts arriving nearby instead of circling forever.
 func physics_update(blob: CharacterBody3D, _delta: float) -> BlobState:
 	blob._step_toward(blob.move_target)
 
-	if blob.global_position.distance_to(blob.final_target) >= blob.ARRIVE_DISTANCE:
+	var dist_to_target: float = blob.global_position.distance_to(blob.final_target)
+	var close_enough_and_blocked: bool = (
+		blob.move_tolerance > 0.0
+		and dist_to_target < blob.ARRIVE_DISTANCE + blob.move_tolerance
+		and blob._is_blocked_near_target()
+	)
+	if dist_to_target >= blob.ARRIVE_DISTANCE and not close_enough_and_blocked:
 		return null
 
 	blob.velocity = Vector3.ZERO

@@ -85,6 +85,14 @@ var current_state: BlobState
 var move_target: Vector3 = Vector3.ZERO
 ## The real destination arrival is measured against (never a detour point).
 var final_target: Vector3 = Vector3.ZERO
+## Extra slack (beyond ARRIVE_DISTANCE) MovingState/PatrolState will accept
+## as "arrived" if the blob is also stuck (see _is_blocked_near_target) --
+## set by World based on how many blobs were given the same move/patrol
+## order, so a big squad sent to one point doesn't leave every blob but one
+## stuck circling forever once the exact spot is already occupied. Reset to
+## 0 by _set_destination; command_move sets it directly, PatrolState reapplies
+## its own stored value after each leg's _set_destination call.
+var move_tolerance: float = 0.0
 ## The resource node this blob is walking to / currently harvesting, if any.
 var pending_harvest_node: Node = null
 
@@ -206,10 +214,13 @@ func _update_ring() -> void:
 	_ring_material.emission = color
 
 ## Player order: walk to `target` and stop (no follow-up task). Cancels any
-## harvest job this blob was working on.
-func command_move(target: Vector3) -> void:
+## harvest job this blob was working on. `tolerance` (see move_tolerance)
+## lets a multi-blob order accept arriving near, rather than exactly on,
+## a point another blob in the same group already reached first.
+func command_move(target: Vector3, tolerance: float = 0.0) -> void:
 	pending_harvest_node = null
 	_set_destination(target)
+	move_tolerance = tolerance
 	_transition_to(MovingState.new())
 	_acknowledge_order()
 
@@ -226,10 +237,12 @@ func command_harvest(node: Node, approach_angle: float = -1.0) -> void:
 
 ## Player order: patrol back and forth between wherever this blob is
 ## standing right now and `point_b`, forever, until a fresh order overrides
-## it (see PatrolState).
-func command_patrol(point_b: Vector3) -> void:
+## it (see PatrolState). `tolerance` (see move_tolerance) is reapplied by
+## PatrolState after each leg, so a shared point_b across a squad doesn't
+## leave every blob but one stuck circling it forever.
+func command_patrol(point_b: Vector3, tolerance: float = 0.0) -> void:
 	pending_harvest_node = null
-	_transition_to(PatrolState.new(global_position, point_b))
+	_transition_to(PatrolState.new(global_position, point_b, tolerance))
 	_acknowledge_order()
 
 ## Player order: hold position where this blob is standing right now,
@@ -263,6 +276,7 @@ func _transition_to(next_state: BlobState) -> void:
 ## progress-tracking state from the previous one.
 func _set_destination(target: Vector3) -> void:
 	final_target = target
+	move_tolerance = 0.0
 	var world = get_parent()
 	path_queue = world.compute_path(global_position, target) if world and world.has_method("compute_path") else []
 	move_target = path_queue[0] if not path_queue.is_empty() else target
@@ -368,6 +382,14 @@ func _update_stall_detection(delta: float) -> void:
 	else:
 		_stall_strikes = 0
 		_consecutive_detours = 0
+
+## Whether this blob has needed at least one sideways detour attempt to make
+## progress toward final_target without yet clearing the stall -- used by
+## MovingState/PatrolState together with move_tolerance to decide whether
+## "close enough, but the exact point turned out to already be taken"
+## should count as arrival instead of leaving the blob stuck circling it.
+func _is_blocked_near_target() -> bool:
+	return _consecutive_detours >= 1
 
 ## Redirects the blob to a temporary waypoint off to one side of its path,
 ## to break a head-on stall against an obstacle. Each detour attempt that

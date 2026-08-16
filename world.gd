@@ -133,6 +133,12 @@ var _debug_menu_active := false
 # "debug_visual_nodes") is currently shown.
 var _debug_visuals_active := false
 
+# Whether DebugMenu's "Toggle Grid" overlay (a static line-mesh showing the
+# factory-placement grid's cell boundaries) is currently shown; the overlay
+# node itself is built lazily on first toggle-on, then just shown/hidden.
+var _grid_overlay_active := false
+var _grid_overlay: MeshInstance3D = null
+
 
 ## Godot lifecycle hook: sets up the pathing grid, streams in the chunks
 ## around the origin (where founder blobs start and the player will likely
@@ -167,6 +173,7 @@ func _ready() -> void:
 	debug_menu.spawn_enemy_requested.connect(_spawn_one_enemy)
 	debug_menu.add_resources_requested.connect(_debug_add_resources)
 	debug_menu.toggle_hitboxes_requested.connect(_toggle_debug_visuals)
+	debug_menu.toggle_grid_requested.connect(_toggle_world_grid)
 
 ## Godot per-frame hook: periodically (not every frame -- see
 ## CHUNK_CHECK_INTERVAL) makes sure every chunk within CHUNK_LOAD_RADIUS of
@@ -238,6 +245,44 @@ func _debug_add_resources() -> void:
 	GameManager.add_resource("wood", 100)
 	GameManager.add_resource("stone", 100)
 	GameManager.add_resource("planks", 100)
+
+## Signal handler for DebugMenu's "Show/Hide Grid" button: toggles a static
+## overlay of the factory-placement grid's cell boundaries (built once, on
+## first use, then just shown/hidden) -- handy while lining up belt chains.
+func _toggle_world_grid() -> void:
+	_grid_overlay_active = not _grid_overlay_active
+	debug_menu.set_grid_active(_grid_overlay_active)
+	if _grid_overlay_active and _grid_overlay == null:
+		_grid_overlay = _build_grid_overlay()
+		add_child(_grid_overlay)
+	if _grid_overlay:
+		_grid_overlay.visible = _grid_overlay_active
+
+## Builds a line-mesh grid spanning PATHING_GRID_HALF_SIZE (the same fixed,
+## generous bounds the pathing grid and minimap use) at GRID_CELL_SIZE
+## spacing, offset by half a cell so lines fall on cell *boundaries* rather
+## than through structure centers.
+func _build_grid_overlay() -> MeshInstance3D:
+	var half := PATHING_GRID_HALF_SIZE
+	var cell_count := int(half / GRID_CELL_SIZE)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	for i in range(-cell_count, cell_count + 1):
+		var offset: float = i * GRID_CELL_SIZE - GRID_CELL_SIZE * 0.5
+		st.add_vertex(Vector3(offset, 0.03, -half))
+		st.add_vertex(Vector3(offset, 0.03, half))
+		st.add_vertex(Vector3(-half, 0.03, offset))
+		st.add_vertex(Vector3(half, 0.03, offset))
+
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.18)
+
+	var mesh_inst := MeshInstance3D.new()
+	mesh_inst.mesh = st.commit()
+	mesh_inst.material_override = mat
+	return mesh_inst
 
 ## Signal handler for DebugMenu's "Show/Hide Hitboxes" button: spawns (or
 ## clears) translucent collision-shape and attack/detection/link-range
@@ -443,6 +488,15 @@ func _has_clear_line(from: Vector3, to: Vector3) -> bool:
 ## currently selected, and plain mouse motion (while not dragging) drives
 ## the hover highlight.
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B:
+		_toggle_build_mode()
+		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT and building_menu.visible:
+		# A right-click anywhere -- not just on another building -- dismisses
+		# the open "This Building" info modal instead of falling through to
+		# a move/harvest order (or, in build mode, a demolish) behind it.
+		building_menu.close_menu()
+		return
 	if _build_mode_active:
 		_handle_build_input(event)
 		return
@@ -592,17 +646,29 @@ func _handle_right_click(pos: Vector2) -> void:
 		return
 	if _pending_patrol:
 		_pending_patrol = false
+		var patrol_tolerance := _group_move_tolerance()
 		for blob in selected_blobs:
-			blob.command_patrol(hit.position)
+			blob.command_patrol(hit.position, patrol_tolerance)
 		Effects.spawn_command_marker(self, hit.position + Vector3(0.0, 0.05, 0.0), COLOR_PATROL)
 		return
 	if hit.collider.is_in_group("resource_nodes"):
 		_issue_harvest_orders(hit.collider)
 		Effects.spawn_command_marker(self, hit.collider.global_position + Vector3(0.0, 0.05, 0.0), COLOR_HARVEST)
 	else:
+		var move_tolerance := _group_move_tolerance()
 		for blob in selected_blobs:
-			blob.command_move(hit.position)
+			blob.command_move(hit.position, move_tolerance)
 		Effects.spawn_command_marker(self, hit.position + Vector3(0.0, 0.05, 0.0), COLOR_MOVE)
+
+## How much slack (see Blob.move_tolerance) a shared move/patrol point should
+## give every blob in the current selection: solo orders get none (exact
+## point, unchanged behavior), and it grows with the group size, capped, so
+## a big squad doesn't leave every blob but one stuck circling the one spot
+## someone else already reached.
+const MOVE_TOLERANCE_PER_EXTRA_BLOB := 0.3
+const MAX_MOVE_TOLERANCE := 2.5
+func _group_move_tolerance() -> float:
+	return min(MAX_MOVE_TOLERANCE, max(0, selected_blobs.size() - 1) * MOVE_TOLERANCE_PER_EXTRA_BLOB)
 
 ## Assigns each selected blob to a nearby node of the same resource type as
 ## `clicked_node`, spreading the squad across up to MAX_BLOBS_PER_NODE nodes
