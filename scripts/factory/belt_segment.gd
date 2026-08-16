@@ -96,7 +96,7 @@ func _build_floor_material() -> StandardMaterial3D:
 ## moving" even when nothing's currently riding it, and advances the held
 ## item (if any) along the belt or hands it off once it reaches the far edge.
 func _process(delta: float) -> void:
-	_floor_material.uv1_offset.y = fmod(_floor_material.uv1_offset.y + (BELT_SPEED / CELL_SIZE) * delta, 1.0)
+	_floor_material.uv1_offset.y = fmod(_floor_material.uv1_offset.y - (BELT_SPEED / CELL_SIZE) * delta, 1.0)
 
 	if current_item == null:
 		return

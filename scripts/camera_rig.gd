@@ -16,7 +16,7 @@ const PAN_SPEED := 26.0
 const ZOOM_MIN := 0.6
 const ZOOM_MAX := 2.8
 const ZOOM_STEP := 0.1
-const BOUNDS := 68.0
+const BOUNDS := 2000.0
 const ROTATE_SPEED := 2.2  # radians/sec, keyboard-driven rotation
 const MOUSE_ROTATE_SENSITIVITY := 0.006  # radians per pixel of drag
 
@@ -39,9 +39,9 @@ func _ready() -> void:
 ## can't wander off the map), and reads Q/E for keyboard-driven rotation.
 func _process(delta: float) -> void:
 	var move := Vector2.ZERO
-	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
+	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_UP):
 		move.y -= 1.0
-	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
+	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_DOWN):
 		move.y += 1.0
 	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
 		move.x -= 1.0
