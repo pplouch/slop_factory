@@ -41,6 +41,16 @@ const ANIMAL_SCENE: PackedScene = preload("res://scenes/world_objects/animal.tsc
 const CHEST_CHANCE := 0.1
 const CHEST_SCENE: PackedScene = preload("res://scenes/world_objects/chest.tscn")
 
+## Chance this chunk gets a single Village (see feature backlog: "add
+## friendly villages to trade with" / "add unfriendly enemy villages to
+## steal resources from") -- deliberately rarer than even Chest, since a
+## village is a real landmark (a small guarded outpost, or a repeatable
+## trade post) rather than a one-time pickup. Evenly split between the two
+## kinds once the roll succeeds at all.
+const VILLAGE_CHANCE := 0.03
+const FRIENDLY_VILLAGE_SCENE: PackedScene = preload("res://scenes/world_objects/friendly_village.tscn")
+const ENEMY_VILLAGE_SCENE: PackedScene = preload("res://scenes/world_objects/enemy_village.tscn")
+
 ## Rivers/lakes are placed procedurally (see Biomes.is_river_at/is_lake_at)
 ## rather than at a flat per-chunk chance -- a chunk only gets a harvestable
 ## water source if one of a few sampled points inside it actually lands on
@@ -74,6 +84,8 @@ func generate(coord: Vector2i, p_biome: Biomes.Biome) -> void:
 			_spawn_one(ANIMAL_SCENE)
 	if randf() < CHEST_CHANCE:
 		_maybe_spawn_chest()
+	if randf() < VILLAGE_CHANCE:
+		_maybe_spawn_village()
 
 ## Builds the ground mesh (height-displaced plane, biome-tinted procedural
 ## texture) and a matching flat collision box for raycasting -- the
@@ -233,6 +245,21 @@ func _maybe_spawn_chest() -> void:
 	if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
 		return
 	var inst: Node3D = CHEST_SCENE.instantiate()
+	add_child(inst)
+	inst.position = local
+	inst.rotation.y = randf() * TAU
+
+## Spawns one Village at a random point in this chunk (see VILLAGE_CHANCE),
+## an even coin flip between friendly and enemy -- skipped entirely if the
+## rolled spot lands on water, same no-retry convention as
+## _maybe_spawn_chest.
+func _maybe_spawn_village() -> void:
+	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
+	var local := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+	if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
+		return
+	var scene: PackedScene = FRIENDLY_VILLAGE_SCENE if randf() < 0.5 else ENEMY_VILLAGE_SCENE
+	var inst: Node3D = scene.instantiate()
 	add_child(inst)
 	inst.position = local
 	inst.rotation.y = randf() * TAU

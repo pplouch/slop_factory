@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://kw8ovq1qk74x"]
+[gd_scene load_steps=15 format=3 uid="uid://kw8ovq1qk74x"]
 
 [ext_resource type="Script" path="res://scripts/world/world.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/camera_rig.gd" id="2"]
@@ -12,6 +12,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/enemy_info_panel.tscn" id="11"]
 [ext_resource type="PackedScene" path="res://scenes/ui/tech_tree_panel.tscn" id="12"]
 [ext_resource type="PackedScene" path="res://scenes/ui/chest_panel.tscn" id="13"]
+[ext_resource type="PackedScene" path="res://scenes/ui/village_panel.tscn" id="14"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 
@@ -59,3 +60,5 @@ current = true
 [node name="TechTreePanel" parent="." instance=ExtResource("12")]
 
 [node name="ChestPanel" parent="." instance=ExtResource("13")]
+
+[node name="VillagePanel" parent="." instance=ExtResource("14")]
