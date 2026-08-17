@@ -1,0 +1,60 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/factory/pipe.gd" id="1"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pipe"]
+albedo_color = Color(0.5, 0.55, 0.6, 1)
+metallic = 0.6
+roughness = 0.4
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_post"]
+size = Vector3(2.0, 0.6, 2.0)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_post"]
+material = SubResource("StandardMaterial3D_pipe")
+top_radius = 0.35
+bottom_radius = 0.35
+height = 0.6
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_connector"]
+material = SubResource("StandardMaterial3D_pipe")
+top_radius = 0.25
+bottom_radius = 0.25
+height = 1.6
+
+[node name="Pipe" type="StaticBody3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.3, 0)
+shape = SubResource("BoxShape3D_post")
+
+[node name="Post" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.3, 0)
+mesh = SubResource("CylinderMesh_post")
+
+[node name="ConnectorPosX" type="MeshInstance3D" parent="."]
+position = Vector3(1.0, 0.3, 0)
+rotation_degrees = Vector3(0, 0, 90)
+visible = false
+mesh = SubResource("CylinderMesh_connector")
+
+[node name="ConnectorNegX" type="MeshInstance3D" parent="."]
+position = Vector3(-1.0, 0.3, 0)
+rotation_degrees = Vector3(0, 0, 90)
+visible = false
+mesh = SubResource("CylinderMesh_connector")
+
+[node name="ConnectorPosZ" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.3, 1.0)
+rotation_degrees = Vector3(90, 0, 0)
+visible = false
+mesh = SubResource("CylinderMesh_connector")
+
+[node name="ConnectorNegZ" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.3, -1.0)
+rotation_degrees = Vector3(90, 0, 0)
+visible = false
+mesh = SubResource("CylinderMesh_connector")

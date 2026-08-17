@@ -21,13 +21,22 @@ const GRID_CELL_SIZE := 2.0
 const EXTRACTOR_LINK_RADIUS := 3.0
 const EXTRACTOR_SCENE: PackedScene = preload("res://scenes/factory/extractor.tscn")
 const PROCESSOR_SCENE: PackedScene = preload("res://scenes/factory/processor.tscn")
-# Belt/Wall costs live on their BuildingKinds entries (see
-# scripts/autoload/building_kinds.gd) since both became LinkableBuilding
-# entries -- only Extractor/Processor (which never joined the tech tree)
-# still price through this dict.
-const BUILD_COSTS := {"extractor": 25, "processor": 30}
+const WATER_EXTRACTOR_SCENE: PackedScene = preload("res://scenes/factory/water_extractor.tscn")
+# Belt/Wall/Pipe costs live on their BuildingKinds entries (see
+# scripts/autoload/building_kinds.gd) since all three are LinkableBuilding
+# entries -- only Extractor/Processor/WaterExtractor (which never joined the
+# tech tree) still price through this dict.
+const BUILD_COSTS := {"extractor": 25, "processor": 30, "water_extractor": 25}
 const GHOST_VALID_COLOR := Color(0.3, 1.0, 0.4, 0.55)
 const GHOST_INVALID_COLOR := Color(1.0, 0.3, 0.3, 0.55)
+# How far out from the build-mode cursor to scan for legal Water Extractor
+# spots -- see _refresh_water_extractor_indicators. Water has no discrete
+# per-instance node the way a resource node does, so unlike
+# _show_extractor_range_indicators (one disc per resource node, shown for
+# the whole loaded world at once) this has to actively sample terrain in a
+# bounded area instead, which only stays cheap if that area is local to
+# where the player is currently looking to place one.
+const WATER_EXTRACTOR_PREVIEW_RADIUS_CELLS := 5
 
 ## Grid cell (Vector2i) -> the belt/extractor/processor/building placed
 ## there. Lets each structure look up its neighbors (e.g. "is there a belt
@@ -49,6 +58,11 @@ var _build_ghost_cell := Vector2i.ZERO
 # selected build kind, so the player can see valid linking range at a glance
 # instead of guessing and getting an invalid-placement red ghost.
 var _extractor_range_indicators: Array = []
+
+# Translucent tiles shown over legal (water) spots near the build-mode
+# cursor while "water_extractor" is the selected build kind -- see
+# _refresh_water_extractor_indicators.
+var _water_extractor_range_indicators: Array = []
 
 
 func setup(world: Node3D, pathing: PathingManager) -> void:
@@ -90,6 +104,7 @@ func toggle_build_mode() -> void:
 	else:
 		clear_ghost()
 		_clear_extractor_range_indicators()
+		_clear_water_extractor_range_indicators()
 
 ## Signal handler for BuildPalette.kind_selected: switches which structure
 ## the next placement will be.
@@ -101,6 +116,8 @@ func on_build_kind_selected(kind_id: String) -> void:
 		_show_extractor_range_indicators()
 	else:
 		_clear_extractor_range_indicators()
+	if kind_id != "water_extractor":
+		_clear_water_extractor_range_indicators()
 
 ## Spawns a translucent green disc over every resource node, sized to
 ## EXTRACTOR_LINK_RADIUS, so the player can see at a glance where an
@@ -130,6 +147,45 @@ func _clear_extractor_range_indicators() -> void:
 		if is_instance_valid(indicator):
 			indicator.queue_free()
 	_extractor_range_indicators.clear()
+
+## Water Extractor's counterpart to _show_extractor_range_indicators, called
+## from _update_ghost_position (not toggle_build_mode/on_build_kind_selected
+## like the extractor version) since it needs to know where the cursor
+## actually is -- water is continuous terrain with no per-instance node list
+## to draw a disc over, so this instead re-samples Biomes.is_water_at across
+## a small grid of cells around `center_cell` every time the ghost moves.
+## Rebuilds from scratch each call; cheap enough at
+## WATER_EXTRACTOR_PREVIEW_RADIUS_CELLS' scale that diffing old-vs-new tiles
+## would just be extra bookkeeping for no real benefit.
+func _refresh_water_extractor_indicators(center_cell: Vector2i) -> void:
+	_clear_water_extractor_range_indicators()
+	var r := WATER_EXTRACTOR_PREVIEW_RADIUS_CELLS
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			var cell := center_cell + Vector2i(dx, dy)
+			var world_pos := grid_to_world(cell)
+			if not Biomes.is_water_at(world_pos.x, world_pos.z):
+				continue
+			var indicator := MeshInstance3D.new()
+			var mesh := BoxMesh.new()
+			mesh.size = Vector3(GRID_CELL_SIZE * 0.85, 0.04, GRID_CELL_SIZE * 0.85)
+			var mat := StandardMaterial3D.new()
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.albedo_color = Color(0.3, 0.6, 1.0, 0.35)
+			mesh.material = mat
+			indicator.mesh = mesh
+			_world.add_child(indicator)
+			indicator.global_position = world_pos + Vector3(0.0, 0.05, 0.0)
+			_water_extractor_range_indicators.append(indicator)
+
+## Removes every water-extractor legal-spot indicator, e.g. when switching to
+## a different build kind or leaving build mode entirely.
+func _clear_water_extractor_range_indicators() -> void:
+	for indicator in _water_extractor_range_indicators:
+		if is_instance_valid(indicator):
+			indicator.queue_free()
+	_water_extractor_range_indicators.clear()
 
 ## Routes all input while build mode is active: mouse movement re-positions
 ## the ghost, left click places whatever's selected in the palette, right
@@ -163,6 +219,8 @@ func _update_ghost_position(screen_pos: Vector2) -> void:
 	_build_ghost.global_position = grid_to_world(_build_ghost_cell)
 	_build_ghost.look_at(_build_ghost.global_position + Vector3(_build_facing.x, 0.0, _build_facing.y), Vector3.UP)
 	_update_ghost_validity()
+	if _build_selected_kind == "water_extractor":
+		_refresh_water_extractor_indicators(_build_ghost_cell)
 
 ## Builds the flat colored tile + direction arrow used as the placement
 ## ghost, entirely in code (no scene needed for something this simple).
@@ -229,6 +287,9 @@ func is_placement_valid(cell: Vector2i) -> bool:
 		return false
 	if _build_selected_kind == "extractor":
 		return _find_resource_node_near(grid_to_world(cell)) != null
+	if _build_selected_kind == "water_extractor":
+		var world_pos := grid_to_world(cell)
+		return Biomes.is_water_at(world_pos.x, world_pos.z)
 	return true
 
 ## Every grid cell `kind_id` occupies if placed with its anchor at `anchor`
@@ -352,6 +413,8 @@ func instantiate_structure(kind: String) -> Node3D:
 		return building_kind.scene.instantiate()
 	if kind == "extractor":
 		return EXTRACTOR_SCENE.instantiate()
+	if kind == "water_extractor":
+		return WATER_EXTRACTOR_SCENE.instantiate()
 	return PROCESSOR_SCENE.instantiate()
 
 ## Removes the ghost preview, e.g. when exiting build mode.

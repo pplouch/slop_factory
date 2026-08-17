@@ -113,6 +113,58 @@ func _ready() -> void:
 		[],
 		6.0
 	))
+	# The next 5 are stub buildings (see scripts/buildings/simple_building.gd
+	# and CLAUDE.md's feature backlog: "New building stubs, logic not
+	# required yet") -- construction/durability/upgrades already work via
+	# BuildableStructure, but none of them do anything special yet, so all
+	# leave input_ports/output_ports/upgrade_costs/upgrade_perks empty rather
+	# than describing effects/connections that don't exist.
+	_register(Kind.new(
+		"research_center", "Research Center", "res://scenes/buildings/research_center.tscn", 60,
+		[], [], 80, "town_hall",
+		110, [],
+		[],
+		22.0
+	))
+	_register(Kind.new(
+		"vegetable_patch", "Patch of Vegetables", "res://scenes/buildings/vegetable_patch.tscn", 20,
+		[], [], 30, "town_hall",
+		40, [],
+		[],
+		10.0
+	))
+	_register(Kind.new(
+		"school", "School", "res://scenes/buildings/school.tscn", 70,
+		[], [], 100, "town_hall",
+		120, [],
+		[],
+		26.0
+	))
+	_register(Kind.new(
+		"tavern", "Tavern", "res://scenes/buildings/tavern.tscn", 55,
+		[], [], 70, "town_hall",
+		100, [],
+		[],
+		20.0
+	))
+	_register(Kind.new(
+		"house", "House", "res://scenes/buildings/house.tscn", 30,
+		[], [], 40, "town_hall",
+		80, [],
+		[],
+		14.0
+	))
+	# Pipe is a LinkableBuilding (see scripts/factory/pipe.gd) like Wall/Belt,
+	# but -- unlike them -- gated behind water_tank rather than seeded
+	# unlocked from the start: a pipe has no reason to exist before there's
+	# water infrastructure to connect.
+	_register(Kind.new(
+		"pipe", "Pipe", "res://scenes/factory/pipe.tscn", 8,
+		[], [], 40, "water_tank",
+		50, [],
+		[],
+		8.0
+	))
 
 ## Thin covariant override: keeps callers' `var kind := BuildingKinds.get_kind(id)`
 ## statically typed as `Kind` (with BuildingKinds' own fields). Returns null

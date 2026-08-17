@@ -4,9 +4,9 @@ extends CanvasLayer
 ## reports button presses via signals and lets World tell it what to show
 ## (World owns all placement logic, grid state, and cost/validity checks).
 ##
-## Extractor/Processor (the only two factory pieces that never joined the
-## tech tree) are fixed buttons always shown. Every BuildingKinds entry --
-## Town Hall, Storage Depot, ..., and now Wall/Belt too, see
+## Extractor/Processor/Water Extractor (the only factory pieces that never
+## joined the tech tree) are fixed buttons always shown. Every BuildingKinds
+## entry -- Town Hall, Storage Depot, ..., and now Wall/Belt/Pipe too, see
 ## scripts/core/linkable_building.gd -- is built dynamically from
 ## BuildingKinds and only shown once GameManager reports it unlocked -- see
 ## _refresh_building_buttons, re-run whenever GameManager.building_unlocked
@@ -23,6 +23,7 @@ signal kind_selected(kind_id: String)
 @onready var palette_panel: PanelContainer = $PalettePanel
 @onready var extractor_button: Button = $PalettePanel/VBox/ExtractorButton
 @onready var processor_button: Button = $PalettePanel/VBox/ProcessorButton
+@onready var water_extractor_button: Button = $PalettePanel/VBox/WaterExtractorButton
 @onready var buildings_container: VBoxContainer = $PalettePanel/VBox/BuildingsContainer
 
 const SELECTED_TINT := Color(1.0, 0.92, 0.5)
@@ -39,6 +40,7 @@ func _ready() -> void:
 	toggle_button.pressed.connect(func(): toggle_requested.emit())
 	extractor_button.pressed.connect(func(): kind_selected.emit("extractor"))
 	processor_button.pressed.connect(func(): kind_selected.emit("processor"))
+	water_extractor_button.pressed.connect(func(): kind_selected.emit("water_extractor"))
 	_build_building_buttons()
 	GameManager.building_unlocked.connect(func(_id): _refresh_building_buttons())
 	_refresh_building_buttons()
@@ -69,5 +71,6 @@ func set_active(active: bool) -> void:
 func set_selected_kind(kind_id: String) -> void:
 	extractor_button.modulate = SELECTED_TINT if kind_id == "extractor" else NORMAL_TINT
 	processor_button.modulate = SELECTED_TINT if kind_id == "processor" else NORMAL_TINT
+	water_extractor_button.modulate = SELECTED_TINT if kind_id == "water_extractor" else NORMAL_TINT
 	for building_id in _building_buttons.keys():
 		_building_buttons[building_id].modulate = SELECTED_TINT if kind_id == building_id else NORMAL_TINT

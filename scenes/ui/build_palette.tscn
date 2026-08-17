@@ -48,6 +48,10 @@ text = "Extractor (25 wood)"
 layout_mode = 2
 text = "Processor (30 wood) — 2 wood -> 1 plank"
 
+[node name="WaterExtractorButton" type="Button" parent="PalettePanel/VBox"]
+layout_mode = 2
+text = "Water Extractor (25 wood) — water tiles only"
+
 [node name="BuildingsSeparator" type="HSeparator" parent="PalettePanel/VBox"]
 layout_mode = 2
 

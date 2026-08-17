@@ -1,0 +1,37 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/buildings/simple_building.gd" id="1"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wall"]
+albedo_color = Color(0.75, 0.62, 0.45, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_walls"]
+material = SubResource("StandardMaterial3D_wall")
+size = Vector3(1.6, 1.6, 1.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_walls"]
+size = Vector3(1.6, 1.6, 1.6)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_roof"]
+albedo_color = Color(0.45, 0.28, 0.18, 1)
+
+[sub_resource type="PrismMesh" id="PrismMesh_roof"]
+material = SubResource("StandardMaterial3D_roof")
+size = Vector3(2.0, 1.2, 2.0)
+
+[node name="House" type="StaticBody3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.8, 0)
+shape = SubResource("BoxShape3D_walls")
+
+[node name="Walls" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.8, 0)
+mesh = SubResource("BoxMesh_walls")
+
+[node name="Roof" type="MeshInstance3D" parent="."]
+position = Vector3(0, 2.2, 0)
+mesh = SubResource("PrismMesh_roof")
