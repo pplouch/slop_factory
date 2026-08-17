@@ -63,7 +63,7 @@ func _build_building_buttons() -> void:
 	for building_id in BuildingKinds.get_ordered_ids():
 		var kind = BuildingKinds.get_kind(building_id)
 		var button := Button.new()
-		button.text = "%s (%d wood)" % [kind.display_name, kind.build_cost]
+		button.text = "%s (%d %s)" % [kind.display_name, kind.build_cost, kind.build_cost_resource]
 		button.icon = Effects.make_swatch_texture(kind.display_color)
 		button.pressed.connect(func(): kind_selected.emit(building_id))
 		buildings_container.add_child(button)

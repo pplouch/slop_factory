@@ -49,11 +49,22 @@ class Kind:
 	## swatches, see Effects.make_swatch_texture), not read anywhere the
 	## actual 3D scene is built.
 	var display_color: Color
+	## Which stockpile resource build_cost is spent in -- "wood" for every
+	## kind except Wall (see feature backlog 2: "adapt all the different
+	## costs so it follows the game flow"). Stone had no sink at all before
+	## this: every resource type is gathered *somewhere*, but nothing ever
+	## spent stone or planks, an actual gap in the economy rather than a
+	## deliberate design. Wall is the one deliberately fixed here (its own
+	## scene material is already named/colored as stone) rather than
+	## touching every building's cost currency in one pass; Planks still
+	## has no sink, left as a known gap for a future session.
+	var build_cost_resource: String = "wood"
 
 	func _init(p_id: String, p_name: String, p_scene_path: String, p_build_cost: int,
 			p_input_ports: Array, p_output_ports: Array, p_unlock_cost: int, p_requires: String,
 			p_max_durability: int, p_upgrade_costs: Array, p_upgrade_perks: Array,
-			p_build_labor: float = 20.0, p_display_color: Color = Color.WHITE) -> void:
+			p_build_labor: float = 20.0, p_display_color: Color = Color.WHITE,
+			p_build_cost_resource: String = "wood") -> void:
 		id = p_id
 		display_name = p_name
 		scene = load(p_scene_path)
@@ -67,6 +78,7 @@ class Kind:
 		upgrade_perks = p_upgrade_perks
 		build_labor = p_build_labor
 		display_color = p_display_color
+		build_cost_resource = p_build_cost_resource
 
 
 ## Godot lifecycle hook: registers every building type. Town Hall is the
@@ -101,7 +113,7 @@ func _ready() -> void:
 	# fixed single-recipe Processor per ore.
 	_register(Kind.new(
 		"foundry", "Foundry", "res://scenes/buildings/foundry.tscn", 80,
-		[Vector2i(0, -1)], [Vector2i(0, 1)], 100, "town_hall",
+		[Vector2i(0, -1)], [Vector2i(0, 1)], 120, "research_center",
 		120, [50, 100],
 		["Smelt time -20%", "Smelt time -20% again"],
 		24.0, Color(0.32, 0.28, 0.26)
@@ -120,7 +132,7 @@ func _ready() -> void:
 		[], [], 0, "",
 		60, [],
 		[],
-		8.0, Color(0.55, 0.52, 0.48)
+		8.0, Color(0.55, 0.52, 0.48), "stone"
 	))
 	_register(Kind.new(
 		"belt", "Belt", "res://scenes/factory/belt_segment.tscn", 5,

@@ -441,13 +441,21 @@ func is_placement_valid(cell: Vector2i) -> bool:
 func _get_footprint_cells(_kind_id: String, anchor: Vector2i) -> Array:
 	return [anchor]
 
-## Wood cost of placing `kind_id`, whether it's a building kind (cost lives
-## on its BuildingKinds entry) or a factory piece (cost lives in BUILD_COSTS).
+## Cost of placing `kind_id`, whether it's a building kind (cost lives on
+## its BuildingKinds entry) or a factory piece (cost lives in BUILD_COSTS,
+## always wood -- factory pieces don't have a build_cost_resource field).
 func get_build_cost(kind_id: String) -> int:
 	var building_kind = BuildingKinds.get_kind(kind_id)
 	if building_kind:
 		return building_kind.build_cost
 	return BUILD_COSTS.get(kind_id, 0)
+
+## Which stockpile resource get_build_cost(kind_id) is spent in -- "wood"
+## for factory pieces and every BuildingKinds entry except Wall (see
+## BuildingKinds.Kind.build_cost_resource).
+func get_build_cost_resource(kind_id: String) -> String:
+	var building_kind = BuildingKinds.get_kind(kind_id)
+	return building_kind.build_cost_resource if building_kind else "wood"
 
 ## Closest resource node within EXTRACTOR_LINK_RADIUS of `pos`, or null.
 func _find_resource_node_near(pos: Vector3) -> Node:
@@ -461,7 +469,8 @@ func _find_resource_node_near(pos: Vector3) -> Node:
 	return nearest
 
 ## Attempts to place the currently-selected build kind at the ghost's cell:
-## validates placement, spends the wood cost, instantiates and orients the
+## validates placement, spends its build cost (usually wood, Wall spends
+## stone -- see get_build_cost_resource), instantiates and orients the
 ## real structure, and registers it on the grid. Silently does nothing if
 ## the action is invalid or unaffordable -- the ghost's color already told
 ## the player which case they're in. (Demolishing is a separate right-click
@@ -470,7 +479,7 @@ func try_place_structure() -> void:
 	if not is_placement_valid(_build_ghost_cell):
 		return
 	var cost := get_build_cost(_build_selected_kind)
-	if not GameManager.try_spend_wood(cost):
+	if not GameManager.try_spend(get_build_cost_resource(_build_selected_kind), cost):
 		return
 
 	var node: Node3D = instantiate_structure(_build_selected_kind)
@@ -522,7 +531,7 @@ func demolish_at(cell: Vector2i) -> void:
 			_pathing.mark_cell(occupied_cell, false)
 	var refund: int = get_build_cost(kind) / 2
 	if refund > 0:
-		GameManager.add_resource("wood", refund)
+		GameManager.add_resource(get_build_cost_resource(kind), refund)
 	structure.queue_free()
 	refresh_neighbor_visuals(cell)
 	_update_ghost_validity()
