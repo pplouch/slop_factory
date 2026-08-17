@@ -39,13 +39,20 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_day_icon"]
+bg_color = Color(0.95, 0.85, 0.4, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1")
 
 [node name="Panel" type="PanelContainer" parent="."]
 offset_left = 16.0
 offset_top = 16.0
-offset_right = 880.0
+offset_right = 1000.0
 offset_bottom = 64.0
 mouse_filter = 2
 theme = ExtResource("3")
@@ -109,6 +116,17 @@ theme_override_styles/panel = SubResource("StyleBoxFlat_population_icon")
 layout_mode = 2
 mouse_filter = 2
 text = "Population: 0/0"
+
+[node name="DayIcon" type="Panel" parent="Panel/HBox"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_styles/panel = SubResource("StyleBoxFlat_day_icon")
+
+[node name="DayLabel" type="Label" parent="Panel/HBox"]
+layout_mode = 2
+mouse_filter = 2
+text = "Day 1"
 
 [node name="SelectedLabel" type="Label" parent="Panel/HBox"]
 layout_mode = 2

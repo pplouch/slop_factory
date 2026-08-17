@@ -48,6 +48,7 @@ const MASK_RESOURCES := 4
 @onready var enemy_info_panel = $EnemyInfoPanel
 @onready var tech_tree_panel = $TechTreePanel
 @onready var chest_panel = $ChestPanel
+@onready var _sun: DirectionalLight3D = $DirectionalLight3D
 
 # Half-size used for the minimap's world<->local mapping -- deliberately
 # small and independent of FOG_HALF_SIZE below (a minimap is meant to be a
@@ -73,6 +74,7 @@ var _selection_manager := SelectionManager.new()
 var _order_manager := OrderManager.new()
 var _debug_overlay_manager := DebugOverlayManager.new()
 var _fog_manager := FogManager.new()
+var _day_night_manager := DayNightManager.new()
 
 
 ## Godot lifecycle hook: wires up every manager (in dependency order --
@@ -96,6 +98,7 @@ func _ready() -> void:
 	_debug_overlay_manager.setup(self)
 	_fog_manager.setup(self, FOG_HALF_SIZE)
 	minimap.set_fog_source(_fog_manager.fog_texture, _fog_manager.world_half_size)
+	_day_night_manager.setup(self, _sun, $WorldEnvironment.environment.sky.sky_material)
 
 	_spawn_manager.spawn_founder_blobs()
 	_chunk_manager.ensure_chunks_loaded(Vector3.ZERO)
@@ -160,11 +163,15 @@ func _move_camera_to(world_pos: Vector3) -> void:
 	camera_rig.position.z = world_pos.z
 
 ## Godot per-frame hook: delegates to ChunkManager, which internally only
-## re-checks chunk coverage every CHUNK_CHECK_INTERVAL, not every frame; and
-## to FogManager, which reveals fog around blobs every frame.
+## re-checks chunk coverage every CHUNK_CHECK_INTERVAL, not every frame; to
+## FogManager, which reveals fog around blobs every frame; and to
+## DayNightManager, which advances the day/night clock and checks for a
+## wave day every frame too (cheap -- just a modulo check most frames).
 func _process(delta: float) -> void:
 	_chunk_manager.process(delta, camera_rig.position)
 	_fog_manager.process()
+	_day_night_manager.process(delta)
+	hud.set_day_info(_day_night_manager.current_day(), _day_night_manager.is_night())
 
 ## Central input router: while build mode is active, every input goes to
 ## BuildingManager instead. Otherwise: left button drives selection (click

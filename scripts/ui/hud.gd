@@ -11,9 +11,11 @@ extends CanvasLayer
 @onready var planks_label: Label = $Panel/HBox/PlanksLabel
 @onready var knowledge_label: Label = $Panel/HBox/KnowledgeLabel
 @onready var population_label: Label = $Panel/HBox/PopulationLabel
+@onready var day_label: Label = $Panel/HBox/DayLabel
 @onready var selected_label: Label = $Panel/HBox/SelectedLabel
 
 var _last_population_text := ""
+var _last_day_shown := 0
 
 
 ## Godot lifecycle hook: subscribes to resource changes and seeds the
@@ -59,6 +61,19 @@ func _on_resource_changed(resource_type: String, total: int) -> void:
 ## "Selected: N" readout current.
 func set_selected_count(n: int) -> void:
 	selected_label.text = "Selected: %d" % n
+
+## Called by World every frame with the current DayNightManager reading --
+## only touches the label (and its punch cue) when the day number actually
+## ticks over, same "don't spam a pulse every frame" guard set_selected_count's
+## sibling _process(population) uses, since this would otherwise run every
+## single frame all game long. "(Night)" is appended while
+## DayNightManager.is_night() is true, cleared once day breaks again.
+func set_day_info(day: int, is_night: bool) -> void:
+	var text := "Day %d%s" % [day, " (Night)" if is_night else ""]
+	if day != _last_day_shown:
+		_last_day_shown = day
+		_punch(day_label)
+	day_label.text = text
 
 ## Briefly scales `label` up then eases it back to normal size, used as a
 ## lightweight "this value just changed" cue.
