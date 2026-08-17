@@ -662,3 +662,46 @@ func _find_nearest_building() -> Node3D:
 			nearest_dist = d
 			nearest = building
 	return nearest
+
+## Called by ConstructState when its current target finishes or disappears:
+## looks for another still-unfinished structure anywhere in the world and
+## heads there next instead of going idle, so a blob given build duty (via a
+## player order or BuildingManager's auto-assign) keeps sweeping through
+## every unfinished building one after another rather than stopping after
+## just the one it was originally sent to (see feature backlog: "queue all
+## unfinished buildings and build them afterwards"). A dynamic "find the
+## nearest still-unfinished one" search rather than a literal pre-built
+## queue -- mirrors _deposit()'s own "loop back if there's more work, else
+## go idle" shape for harvesting, and stays correct even if other blobs
+## finish/demolish things while this one is still working.
+func _next_build_or_idle() -> BlobState:
+	var next_target := _find_nearest_unfinished_structure()
+	if next_target:
+		_approach_angle = randf() * TAU
+		_set_destination(_approach_point(next_target.global_position, _approach_angle, BUILD_APPROACH_RADIUS))
+		pending_build_target = next_target
+		return MovingState.new()
+	return IdleState.new()
+
+## Closest member of the "structures" or "buildings" groups that's still
+## under construction, or null -- both groups since Town Hall (unlike every
+## other BuildableStructure kind) only ever joins "buildings", not
+## "structures" (see Building._ready()); checking both, with duplicates
+## between them harmless for a plain nearest-search, avoids silently
+## skipping Town Hall here. Duck-typed via "is_under_construction" in n
+## since only BuildableStructure-based kinds (every real building, plus
+## Wall/Belt/Pipe/Road via LinkableBuilding) have that field at all;
+## Extractor/Processor/WaterExtractor ("no blob required", see their own
+## headers) never match.
+func _find_nearest_unfinished_structure() -> Node:
+	var nearest: Node = null
+	var nearest_dist := INF
+	var candidates := get_tree().get_nodes_in_group("structures") + get_tree().get_nodes_in_group("buildings")
+	for n in candidates:
+		if not is_instance_valid(n) or not ("is_under_construction" in n) or not n.is_under_construction:
+			continue
+		var d := global_position.distance_to(n.global_position)
+		if d < nearest_dist:
+			nearest_dist = d
+			nearest = n
+	return nearest

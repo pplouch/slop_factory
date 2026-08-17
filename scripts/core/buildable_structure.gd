@@ -42,6 +42,16 @@ var max_durability: int
 var is_under_construction := true
 var construction_progress := 0.0
 
+# -- Under-construction progress bar (see _build_construction_bar) --
+const CONSTRUCTION_BAR_WIDTH := 0.8
+const CONSTRUCTION_BAR_HEIGHT := 0.12
+const CONSTRUCTION_BAR_Y := 1.7
+const CONSTRUCTION_BAR_COLOR := Color(1.0, 0.85, 0.3, 1.0)
+
+## Null while finished/not yet built -- see _refresh_construction_bar.
+var _construction_bar_root: Node3D = null
+var _construction_bar_fill_pivot: Node3D = null
+
 
 ## Reads max_durability/durability from this instance's BuildingKinds entry.
 ## Called by each subclass's own _ready(), not automatically -- see header.
@@ -93,6 +103,77 @@ func _apply_construction_visual(fraction: float) -> void:
 		if entry.get("scales", true):
 			mesh.scale.y = height_fraction
 		mesh.position.y = base_position.y * height_fraction
+	_refresh_construction_bar(fraction)
+
+## Keeps the always-visible "still under construction" progress bar in sync
+## with `fraction`, building it lazily the first time this runs rather than
+## needing every subclass's own _ready() to call one more setup method --
+## every subclass already calls _apply_construction_visual(0.0) there (see
+## that method's own header), so this piggybacks on the exact same call
+## sites (_ready(), every add_construction_progress() tick, and the
+## finishing call) rather than needing a new one. Torn down for good once
+## construction actually finishes (fraction >= 1.0), since a finished
+## building has nothing left to indicate (see feature backlog: "building
+## should have a visual tip that it's not finished yet" -- previously the
+## only cue was the rise-from-ground mesh animation itself, easy to miss
+## once a building is most of the way up, or opening BuildingMenu to read
+## its progress as text).
+func _refresh_construction_bar(fraction: float) -> void:
+	if fraction >= 1.0:
+		if _construction_bar_root:
+			_construction_bar_root.queue_free()
+			_construction_bar_root = null
+			_construction_bar_fill_pivot = null
+		return
+	if _construction_bar_root == null:
+		_build_construction_bar()
+	_construction_bar_fill_pivot.scale.x = clamp(fraction, 0.0, 1.0)
+
+## Builds a two-quad billboarded progress bar (dark background + gold fill),
+## the same construction Combatant._build_health_bar uses for a unit's
+## health bar -- see that method's own comments for why each quad material
+## needs billboard_mode + cull_mode disabled + no_depth_test + a staggered
+## render_priority. Floats above the structure (rather than at its feet like
+## a health bar) so it stays visible over the mesh that's still rising
+## toward it (see _apply_construction_visual) instead of the two overlapping.
+func _build_construction_bar() -> void:
+	_construction_bar_root = Node3D.new()
+	_construction_bar_root.position = Vector3(0.0, CONSTRUCTION_BAR_Y, 0.0)
+	add_child(_construction_bar_root)
+
+	var bg := MeshInstance3D.new()
+	var bg_mesh := QuadMesh.new()
+	bg_mesh.size = Vector2(CONSTRUCTION_BAR_WIDTH, CONSTRUCTION_BAR_HEIGHT)
+	var bg_mat := StandardMaterial3D.new()
+	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bg_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	bg_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	bg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bg_mat.no_depth_test = true
+	bg_mat.render_priority = 1
+	bg_mat.albedo_color = Color(0.1, 0.1, 0.1, 0.85)
+	bg_mesh.material = bg_mat
+	bg.mesh = bg_mesh
+	_construction_bar_root.add_child(bg)
+
+	_construction_bar_fill_pivot = Node3D.new()
+	_construction_bar_fill_pivot.position = Vector3(-CONSTRUCTION_BAR_WIDTH * 0.5, 0.0, 0.002)
+	_construction_bar_root.add_child(_construction_bar_fill_pivot)
+
+	var fill := MeshInstance3D.new()
+	var fill_mesh := QuadMesh.new()
+	fill_mesh.size = Vector2(CONSTRUCTION_BAR_WIDTH, CONSTRUCTION_BAR_HEIGHT)
+	var fill_mat := StandardMaterial3D.new()
+	fill_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fill_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	fill_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	fill_mat.no_depth_test = true
+	fill_mat.render_priority = 2
+	fill_mat.albedo_color = CONSTRUCTION_BAR_COLOR
+	fill_mesh.material = fill_mat
+	fill.mesh = fill_mesh
+	fill.position = Vector3(CONSTRUCTION_BAR_WIDTH * 0.5, 0.0, 0.0)
+	_construction_bar_fill_pivot.add_child(fill)
 
 ## Attempts to spend this instance's next upgrade level's knowledge cost
 ## (see BuildingKinds.upgrade_costs) -- knowledge, not wood, since a

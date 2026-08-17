@@ -4,10 +4,12 @@ extends BlobState
 ## labor toward it every physics frame (scaled by blob.build_rate, itself
 ## driven by the blob's kind -- see BlobKinds.Kind.build_mult).
 ##
-## Falls back to IdleState if the building disappears out from under it
-## (demolished by the player mid-construction) or finishes -- there's no
-## "carry loot home" leg the way harvesting has, so unlike ReturningState
-## this is the last stop.
+## Once the building disappears out from under it (demolished by the player
+## mid-construction) or finishes, looks for another still-unfinished
+## structure anywhere in the world and heads there next instead of always
+## going idle (see Blob._next_build_or_idle) -- a blob given build duty
+## keeps sweeping through every unfinished building until there's genuinely
+## none left, only then falling back to IdleState.
 
 ## Periodic "hammering" feedback so standing still working on a building
 ## reads as active rather than just idling next to it.
@@ -21,7 +23,7 @@ func physics_update(blob: CharacterBody3D, delta: float) -> BlobState:
 	var building = blob.pending_build_target
 	if not is_instance_valid(building) or not building.is_under_construction:
 		blob.pending_build_target = null
-		return IdleState.new()
+		return blob._next_build_or_idle()
 
 	building.add_construction_progress(delta * blob.build_rate)
 
@@ -32,7 +34,7 @@ func physics_update(blob: CharacterBody3D, delta: float) -> BlobState:
 
 	if not building.is_under_construction:
 		blob.pending_build_target = null
-		return IdleState.new()
+		return blob._next_build_or_idle()
 	return null
 
 func display_name(_blob: CharacterBody3D) -> String:

@@ -513,8 +513,44 @@ func try_place_structure() -> void:
 	if _build_selected_kind == "extractor":
 		node.linked_node = _find_resource_node_near(node.global_position)
 
+	if "is_under_construction" in node and node.is_under_construction:
+		_auto_assign_builders(node)
+
 	refresh_neighbor_visuals(_build_ghost_cell)
 	_update_ghost_validity()
+
+## Number of currently-idle blobs automatically sent to help build a freshly-
+## placed structure (see _auto_assign_builders) -- capped rather than
+## grabbing every idle blob in the world for one wall, matching
+## OrderManager's own MAX_BLOBS_PER_NODE-style "don't crowd one target"
+## precedent for harvest orders.
+const AUTO_ASSIGN_BUILDER_CAP := 2
+
+## Sends up to AUTO_ASSIGN_BUILDER_CAP currently-idle blobs (closest first)
+## to help construct a freshly-placed building automatically, so the player
+## doesn't have to select workers and right-click every new placement by
+## hand (see feature backlog: "when creating a new building, assign free
+## workers to build it"). Mirrors OrderManager._issue_build_orders' own
+## evenly-spaced-approach-angle trick so multiple assigned blobs don't all
+## aim for the same spot, just auto-triggered here instead of player-issued,
+## and sourced from every idle blob in the world rather than the current
+## selection. A no-op if no blob is currently idle -- ConstructState's own
+## "keep building whatever's still unfinished" loop (see
+## Blob._next_build_or_idle) means a worker that frees up later from
+## somewhere else will still find and finish this one on its own.
+func _auto_assign_builders(building: Node3D) -> void:
+	var idle_blobs: Array = []
+	for blob in _world.get_tree().get_nodes_in_group("blobs"):
+		if is_instance_valid(blob) and blob.current_state is IdleState:
+			idle_blobs.append(blob)
+	if idle_blobs.is_empty():
+		return
+	idle_blobs.sort_custom(func(a, b):
+		return a.global_position.distance_to(building.global_position) < b.global_position.distance_to(building.global_position))
+	var assigned: Array = idle_blobs.slice(0, AUTO_ASSIGN_BUILDER_CAP)
+	for i in assigned.size():
+		var angle := (TAU / assigned.size()) * i
+		assigned[i].command_build(building, angle)
 
 ## Removes whatever structure occupies `cell` (a right-click in build mode,
 ## regardless of which kind is currently selected for placement), refunding
