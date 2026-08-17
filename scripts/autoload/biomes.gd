@@ -118,6 +118,18 @@ const LAKE_THRESHOLD := 0.35
 ## around its edge stays shallow).
 const DEEP_RIVER_FRACTION := 0.4
 const DEEP_LAKE_MARGIN := 0.08
+## Ground-vertex tint colors for water_tint_at's smooth land -> shore ->
+## shallow -> deep gradient (see feature backlog: "water ridge should have
+## a texture on the borders to make it more realistic") -- a sandy ring
+## right at the water's edge, replacing the old hard land/water color cut.
+const SHORE_TINT_COLOR := Color(0.82, 0.74, 0.52)
+const SHALLOW_WATER_TINT_COLOR := Color(0.2, 0.45, 0.7)
+const DEEP_WATER_TINT_COLOR := Color(0.08, 0.2, 0.4)
+## How wide (in noise-value units, same scale as RIVER_HALF_WIDTH/
+## LAKE_THRESHOLD) the sandy shore band is on the land side of the water
+## line.
+const RIVER_SHORE_BAND := 0.01
+const LAKE_SHORE_BAND := 0.03
 ## Nothing counts as water this close to the origin, so founder blobs never
 ## spawn standing in a lake.
 const WATER_SAFE_RADIUS := 12.0
@@ -287,6 +299,37 @@ func is_deep_water_at(world_x: float, world_z: float) -> bool:
 	if absf(river_noise.get_noise_2d(world_x, world_z)) < RIVER_HALF_WIDTH * DEEP_RIVER_FRACTION:
 		return true
 	return lake_noise.get_noise_2d(world_x, world_z) > LAKE_THRESHOLD + DEEP_LAKE_MARGIN
+
+## Ground-vertex tint for `world_x`/`world_z`: white (no tint) on dry land,
+## smoothly blending through a sandy `SHORE_TINT_COLOR` ring as the
+## underlying river/lake noise approaches its water threshold, then through
+## `SHALLOW_WATER_TINT_COLOR` to `DEEP_WATER_TINT_COLOR` past it -- replaces
+## the old hard is_water_at binary cut with a continuous gradient read from
+## the same noise fields is_river_at/is_lake_at/is_deep_water_at already
+## classify booleans from, so the visual boundary always agrees with the
+## gameplay one (Chunk used to tint every water vertex the same flat color;
+## used by Chunk._build_ground_mesh for its vertex colors).
+func water_tint_at(world_x: float, world_z: float) -> Color:
+	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
+		return Color.WHITE
+
+	var river_n := absf(river_noise.get_noise_2d(world_x, world_z))
+	if river_n < RIVER_HALF_WIDTH + RIVER_SHORE_BAND:
+		if river_n >= RIVER_HALF_WIDTH:
+			var shore_t: float = smoothstep(RIVER_HALF_WIDTH + RIVER_SHORE_BAND, RIVER_HALF_WIDTH, river_n)
+			return Color.WHITE.lerp(SHORE_TINT_COLOR, shore_t)
+		var deep_t: float = smoothstep(RIVER_HALF_WIDTH * DEEP_RIVER_FRACTION, 0.0, river_n)
+		return SHALLOW_WATER_TINT_COLOR.lerp(DEEP_WATER_TINT_COLOR, deep_t)
+
+	var lake_n := lake_noise.get_noise_2d(world_x, world_z)
+	if lake_n > LAKE_THRESHOLD - LAKE_SHORE_BAND:
+		if lake_n < LAKE_THRESHOLD:
+			var shore_t: float = smoothstep(LAKE_THRESHOLD - LAKE_SHORE_BAND, LAKE_THRESHOLD, lake_n)
+			return Color.WHITE.lerp(SHORE_TINT_COLOR, shore_t)
+		var deep_t: float = smoothstep(LAKE_THRESHOLD, LAKE_THRESHOLD + DEEP_LAKE_MARGIN, lake_n)
+		return SHALLOW_WATER_TINT_COLOR.lerp(DEEP_WATER_TINT_COLOR, deep_t)
+
+	return Color.WHITE
 
 ## Whether `world_x`/`world_z` is a rare volcanic hotspot, checked before
 ## the temperature/humidity climate grid.

@@ -16,8 +16,12 @@ const CHUNK_SIZE := 25.0
 ## quantized steps -- terrain relief is purely cosmetic either way (see
 ## _build_ground_mesh), so the extra vertices are cheap.
 const SUBDIVISIONS := 10
-const TEXTURE_SIZE := 32
-const TEXTURE_NOISE_FREQUENCY := 0.18
+## Doubled from the original 32 (see feature backlog: "smooth and improve
+## terrain texture") -- TEXTURE_NOISE_FREQUENCY was halved alongside it so
+## the mottling pattern keeps the same physical size per chunk, just
+## resolved at twice the pixel density (less blocky/pixelated up close).
+const TEXTURE_SIZE := 64
+const TEXTURE_NOISE_FREQUENCY := 0.09
 
 ## Resource clusters attempted per chunk (each biome resource entry has an
 ## independent chance to actually appear, so not every chunk gets one of
@@ -39,10 +43,6 @@ const ANIMAL_SCENE: PackedScene = preload("res://scenes/world_objects/animal.tsc
 const WATER_PLACEMENT_ATTEMPTS := 6
 const RIVER_POND_SCENE: PackedScene = preload("res://scenes/world_objects/water_pond.tscn")
 const LAKE_SCENE: PackedScene = preload("res://scenes/world_objects/lake.tscn")
-
-## Ground vertices/pixels this close to a river/lake position are tinted
-## toward WATER_TINT_COLOR, blended by how close (see _build_ground_mesh).
-const WATER_TINT_COLOR := Color(0.2, 0.4, 0.65)
 
 var biome: Biomes.Biome
 var chunk_coord: Vector2i
@@ -91,11 +91,15 @@ func _build_ground() -> void:
 ## UVs), displaces only its vertices' Y using the shared, world-space-
 ## sampled Biomes.height_at (so height agrees with whatever any neighboring
 ## chunk already computed for the same border vertex), and tints vertices
-## that fall in a river/lake toward WATER_TINT_COLOR. Both are purely
-## cosmetic terrain relief/color -- Blob/Enemy's global_position.y stays
-## force-clamped to 0.0 every physics frame regardless (see CLAUDE.md:
-## "this project has no vertical gameplay"), so this never has to agree
-## with unit footing, just look pleasant from the RTS camera angle.
+## via Biomes.water_tint_at -- white on dry land, smoothly blending through
+## a sandy shore ring and into shallow/deep water as the underlying noise
+## approaches and passes its water threshold (see feature backlog: "water
+## ridge should have a texture on the borders to make it more realistic").
+## Both are purely cosmetic terrain relief/color -- Blob/Enemy's
+## global_position.y stays force-clamped to 0.0 every physics frame
+## regardless (see CLAUDE.md: "this project has no vertical gameplay"), so
+## this never has to agree with unit footing, just look pleasant from the
+## RTS camera angle.
 func _build_ground_mesh() -> ArrayMesh:
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(CHUNK_SIZE, CHUNK_SIZE)
@@ -113,7 +117,7 @@ func _build_ground_mesh() -> ArrayMesh:
 		var world_z := global_position.z + v.z
 		var height: float = Biomes.height_at(world_x, world_z, biome)
 		vertices[i] = Vector3(v.x, height, v.z)
-		colors[i] = WATER_TINT_COLOR if Biomes.is_water_at(world_x, world_z) else Color.WHITE
+		colors[i] = Biomes.water_tint_at(world_x, world_z)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_COLOR] = colors
 
@@ -138,6 +142,13 @@ func _build_ground_material() -> StandardMaterial3D:
 	var tex_noise := FastNoiseLite.new()
 	tex_noise.seed = hash(chunk_coord) + 1
 	tex_noise.frequency = TEXTURE_NOISE_FREQUENCY
+	# A little fractal detail layered on top of the base mottling reads as
+	# more organic/less uniformly speckled than a single noise frequency --
+	# gain kept modest so it adds texture without overwhelming the base
+	# pattern's scale.
+	tex_noise.fractal_octaves = 3
+	tex_noise.fractal_lacunarity = 2.0
+	tex_noise.fractal_gain = 0.4
 	for y in TEXTURE_SIZE:
 		for x in TEXTURE_SIZE:
 			var n: float = (tex_noise.get_noise_2d(x, y) + 1.0) * 0.5
