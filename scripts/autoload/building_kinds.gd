@@ -119,6 +119,17 @@ func _ready() -> void:
 		[],
 		6.0, Color(0.15, 0.15, 0.18)
 	))
+	# Road is a LinkableBuilding like Wall/Belt (see scripts/factory/road.gd)
+	# and, like them, seeded unlocked from the start -- basic infrastructure
+	# a new player might want early, with no real reason to gate it behind
+	# research the way Pipe (water-specific) is.
+	_register(Kind.new(
+		"road", "Road", "res://scenes/factory/road.tscn", 6,
+		[], [], 0, "",
+		50, [],
+		[],
+		7.0, Color(0.3, 0.3, 0.32)
+	))
 	# Research Center is the tech tree's knowledge source (see
 	# scripts/buildings/research_center.gd) -- its own upgrade tiers boost
 	# its production rate, priced in knowledge like every other tier/perk

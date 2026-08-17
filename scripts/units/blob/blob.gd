@@ -410,8 +410,9 @@ func _physics_process(delta: float) -> void:
 	_update_combat(delta)
 	_update_limb_animation(delta)
 
-## Moves the blob toward `target` at its current speed and faces it that
-## direction. Shared by MovingState and ReturningState.
+## Moves the blob toward `target` at its current speed (scaled by whatever's
+## directly underfoot, see _current_terrain_speed_multiplier) and faces it
+## that direction. Shared by MovingState and ReturningState.
 func _step_toward(target: Vector3) -> void:
 	var to_target := target - global_position
 	to_target.y = 0.0
@@ -420,8 +421,21 @@ func _step_toward(target: Vector3) -> void:
 		velocity = Vector3.ZERO
 		return
 	var direction := to_target / distance
-	velocity = direction * speed
+	velocity = direction * speed * _current_terrain_speed_multiplier()
 	look_at(global_position + direction, Vector3.UP)
+
+## Speed multiplier from whatever structure occupies this blob's current
+## grid cell -- Road is the one kind that has an opinion (see
+## scripts/factory/road.gd), duck-typed via has_method rather than an
+## `is Road` check so any future speed-modifying terrain piece could plug
+## in the same way without this needing to know about it by name.
+func _current_terrain_speed_multiplier() -> float:
+	var world = get_parent()
+	var cell: Vector2i = world.world_to_grid(global_position)
+	var structure: Node = world.get_structure_at(cell)
+	if structure and structure.has_method("get_speed_multiplier"):
+		return structure.get_speed_multiplier()
+	return 1.0
 
 ## Watches for a blob that's supposed to be travelling but isn't actually
 ## getting anywhere -- e.g. wedged against an obstacle it's approaching

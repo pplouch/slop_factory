@@ -70,7 +70,7 @@ var _build_ghost_cell := Vector2i.ZERO
 # building like Town Hall. A short explicit list rather than a derived
 # "is LinkableBuilding" check, since checking the type would mean
 # instantiating the scene just to ask.
-const DRAG_PLACE_KINDS := ["wall", "belt", "pipe"]
+const DRAG_PLACE_KINDS := ["wall", "belt", "pipe", "road"]
 
 var _dragging_place := false
 ## The most recently *drag*-placed cell (not necessarily the ghost's current
