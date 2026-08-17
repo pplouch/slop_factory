@@ -46,6 +46,7 @@ const MASK_RESOURCES := 4
 @onready var minimap = $Minimap/Display
 @onready var resource_info_panel = $ResourceInfoPanel
 @onready var enemy_info_panel = $EnemyInfoPanel
+@onready var tech_tree_panel = $TechTreePanel
 
 # Half-size used for the minimap's world<->local mapping -- deliberately
 # small and independent of FOG_HALF_SIZE below (a minimap is meant to be a
@@ -122,6 +123,30 @@ func _ready() -> void:
 	unit_info_panel.equip_bucket_requested.connect(func(): _order_manager.order_equip("bucket"))
 
 	minimap.camera_move_requested.connect(_move_camera_to)
+	tech_tree_panel.opened.connect(func(): close_other_ui(tech_tree_panel))
+
+## Closes every other primary UI popup/panel and deselects any currently
+## selected blobs whenever one of them opens, so BuildingMenu/
+## ResourceInfoPanel/EnemyInfoPanel/TechTreePanel/DebugMenu/UnitInfoPanel
+## (via unit selection) never stack on top of each other -- `opened` is
+## whichever one just opened (skipped so it isn't immediately closed again).
+## Every close call here is already idempotent (a no-op if that panel wasn't
+## open to begin with), so this can be called unconditionally from any "a box
+## just opened" call site rather than each site tracking what else is open.
+func close_other_ui(opened: Node) -> void:
+	if building_menu != opened:
+		building_menu.close_menu()
+	if resource_info_panel != opened:
+		resource_info_panel.close_panel()
+	if enemy_info_panel != opened:
+		enemy_info_panel.close_panel()
+	if tech_tree_panel != opened:
+		tech_tree_panel.close_panel()
+	if debug_menu != opened:
+		_debug_overlay_manager.close_debug_menu()
+	if unit_info_panel != opened:
+		_selection_manager.clear_selection()
+		_selection_manager.selection_changed()
 
 ## Signal handler for Minimap.camera_move_requested: re-centers the camera
 ## rig on the clicked world point (only x/z -- the rig's own y is whatever

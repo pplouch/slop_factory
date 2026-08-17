@@ -282,10 +282,14 @@ func _clear_port_indicators() -> void:
 ## the ghost (and, if a drag-place is in progress, tries to extend it into
 ## the newly-entered cell), left click places whatever's selected in the
 ## palette (and starts a drag-place for DRAG_PLACE_KINDS), releasing left
-## ends any drag-place in progress, right click demolishes whatever
-## structure is under the ghost cell (regardless of which kind is currently
-## selected for placement), 'R' rotates the ghost 90 degrees, and Escape
-## exits build mode entirely.
+## ends any drag-place in progress, right click on an occupied cell
+## demolishes whatever structure is there (regardless of which kind is
+## currently selected for placement) or, on an empty cell, exits build mode
+## entirely (same as Escape) -- a bare right-click reads as "I'm done here"
+## once there's nothing under the cursor left to demolish, rather than being
+## a no-op that leaves the player stuck in build mode with no obvious way
+## out short of finding Escape or the palette's own toggle button. 'R'
+## rotates the ghost 90 degrees, and Escape exits build mode entirely.
 func handle_build_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		_update_ghost_position(event.position)
@@ -300,7 +304,10 @@ func handle_build_input(event: InputEvent) -> void:
 			else:
 				_dragging_place = false
 		elif event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
-			demolish_at(_build_ghost_cell)
+			if get_structure_at(_build_ghost_cell) != null:
+				demolish_at(_build_ghost_cell)
+			else:
+				toggle_build_mode()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_R:
 			_rotate_ghost()

@@ -44,6 +44,7 @@ func handle_click_select(pos: Vector2, additive: bool) -> void:
 	var enemy_hit: Dictionary = _world.raycast(pos, MASK_ENEMIES)
 	if enemy_hit and enemy_hit.collider.is_in_group("enemies"):
 		_world.enemy_info_panel.open_for(enemy_hit.collider)
+		_world.close_other_ui(_world.enemy_info_panel)
 		return
 
 	var resource_hit: Dictionary = _world.raycast(pos, MASK_RESOURCES)
@@ -51,9 +52,11 @@ func handle_click_select(pos: Vector2, additive: bool) -> void:
 		var building_owner := find_building_owner(resource_hit.collider)
 		if building_owner:
 			_world.building_menu.open_menu(building_owner)
+			_world.close_other_ui(_world.building_menu)
 			return
 		if resource_hit.collider.is_in_group("resource_nodes"):
 			_world.resource_info_panel.open_for(resource_hit.collider)
+			_world.close_other_ui(_world.resource_info_panel)
 			return
 
 	if not additive:
@@ -128,14 +131,19 @@ func clear_selection() -> void:
 ## HUD's count and shows/hides the unit-info panel to match. A single
 ## selected blob gets the detailed stats/inventory view; multiple get a
 ## compact per-kind grouped overview instead of hiding the panel entirely.
+## Selecting at least one blob also closes every other UI box (see
+## World.close_other_ui) -- an empty selection doesn't, since nothing new
+## opened in that case, just the (already-visible) unit panel closing.
 func selection_changed() -> void:
 	_world.hud.set_selected_count(selected_blobs.size())
 	if selected_blobs.is_empty():
 		_world.unit_info_panel.hide_panel()
-	elif selected_blobs.size() == 1 and is_instance_valid(selected_blobs[0]):
+		return
+	if selected_blobs.size() == 1 and is_instance_valid(selected_blobs[0]):
 		_world.unit_info_panel.show_blob(selected_blobs[0])
 	else:
 		_world.unit_info_panel.show_group(selected_blobs)
+	_world.close_other_ui(_world.unit_info_panel)
 
 ## Handles the left-mouse-button input event lifecycle (drag-start on press,
 ## click-vs-box-select resolution on release) -- called by World's

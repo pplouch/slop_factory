@@ -19,6 +19,11 @@ extends CanvasLayer
 ## on GameManager, and at just two call sites the duplication reads more
 ## plainly than a Callable-juggling abstraction would.
 
+## Fired when this panel is toggled open (not closed) -- World listens so it
+## can close every other UI box/deselect units, keeping only one box open at
+## a time (see World.close_other_ui).
+signal opened
+
 @onready var toggle_button: Button = $ToggleButton
 @onready var panel: PanelContainer = $Panel
 @onready var knowledge_label: Label = $Panel/VBox/KnowledgeLabel
@@ -53,6 +58,11 @@ func _toggle() -> void:
 	panel.visible = not panel.visible
 	if panel.visible:
 		_refresh()
+		opened.emit()
+
+## Hides the panel, e.g. when another UI box opens (see World.close_other_ui).
+func close_panel() -> void:
+	panel.visible = false
 
 ## Creates one row (label + button) per BuildingKinds entry that actually
 ## needs unlocking (unlock_cost > 0 -- Town Hall/Wall/Belt are seeded

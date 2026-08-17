@@ -28,6 +28,16 @@ func setup(world: Node3D) -> void:
 func toggle_debug_menu() -> void:
 	_debug_menu_active = not _debug_menu_active
 	_world.debug_menu.set_active(_debug_menu_active)
+	if _debug_menu_active:
+		_world.close_other_ui(_world.debug_menu)
+
+## Hides the debug panel, e.g. when another UI box opens (see
+## World.close_other_ui) -- a no-op if it wasn't open to begin with.
+func close_debug_menu() -> void:
+	if not _debug_menu_active:
+		return
+	_debug_menu_active = false
+	_world.debug_menu.set_active(false)
 
 ## Signal handler for DebugMenu's "Generate Blob" button: asks the nearest
 ## building to spawn a free blob.
