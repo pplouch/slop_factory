@@ -1,0 +1,56 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_objects/resource_node.gd" id="1"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_1"]
+radius = 0.7
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gloop"]
+albedo_color = Color(0.55, 0.95, 0.25, 1)
+roughness = 0.35
+emission_enabled = true
+emission = Color(0.55, 0.95, 0.25, 1)
+emission_energy_multiplier = 0.5
+
+[sub_resource type="SphereMesh" id="SphereMesh_gloop"]
+material = SubResource("StandardMaterial3D_gloop")
+radius = 0.7
+height = 1.1
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_bubble"]
+albedo_color = Color(0.75, 0.35, 0.85, 1)
+roughness = 0.3
+emission_enabled = true
+emission = Color(0.75, 0.35, 0.85, 1)
+emission_energy_multiplier = 0.6
+
+[sub_resource type="SphereMesh" id="SphereMesh_bubble"]
+material = SubResource("StandardMaterial3D_bubble")
+radius = 0.18
+height = 0.36
+
+[node name="SlopiumOre" type="StaticBody3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+resource_type = "slopium"
+max_amount = 150
+respawn_time = 65.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.35, 0)
+shape = SubResource("SphereShape3D_1")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.3, 0)
+scale = Vector3(1.1, 0.45, 0.95)
+mesh = SubResource("SphereMesh_gloop")
+
+[node name="BubbleA" type="MeshInstance3D" parent="."]
+position = Vector3(0.25, 0.48, 0.1)
+mesh = SubResource("SphereMesh_bubble")
+
+[node name="BubbleB" type="MeshInstance3D" parent="."]
+position = Vector3(-0.2, 0.42, -0.18)
+scale = Vector3(0.7, 0.7, 0.7)
+mesh = SubResource("SphereMesh_bubble")

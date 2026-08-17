@@ -1,0 +1,54 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_objects/resource_node.gd" id="1"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_1"]
+radius = 0.7
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rock"]
+albedo_color = Color(0.55, 0.56, 0.58, 1)
+roughness = 0.9
+
+[sub_resource type="SphereMesh" id="SphereMesh_rock"]
+material = SubResource("StandardMaterial3D_rock")
+radius = 0.7
+height = 1.4
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nugget"]
+albedo_color = Color(0.82, 0.83, 0.85, 1)
+metallic = 0.8
+roughness = 0.2
+emission_enabled = true
+emission = Color(0.82, 0.83, 0.85, 1)
+emission_energy_multiplier = 0.25
+
+[sub_resource type="SphereMesh" id="SphereMesh_nugget"]
+material = SubResource("StandardMaterial3D_nugget")
+radius = 0.16
+height = 0.32
+
+[node name="SilverOre" type="StaticBody3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+resource_type = "silver"
+max_amount = 250
+respawn_time = 55.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.5, 0)
+shape = SubResource("SphereShape3D_1")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.42, 0)
+scale = Vector3(1, 0.6, 0.85)
+mesh = SubResource("SphereMesh_rock")
+
+[node name="NuggetA" type="MeshInstance3D" parent="."]
+position = Vector3(0.22, 0.42, 0.18)
+mesh = SubResource("SphereMesh_nugget")
+
+[node name="NuggetB" type="MeshInstance3D" parent="."]
+position = Vector3(-0.18, 0.36, -0.12)
+scale = Vector3(0.75, 0.75, 0.75)
+mesh = SubResource("SphereMesh_nugget")

@@ -130,6 +130,16 @@ func resource_color(resource_type: String) -> Color:
 			return Color(0.85, 0.4, 0.15)
 		"knowledge":
 			return Color(0.25, 0.65, 0.7)
+		"iron", "iron_bar":
+			return Color(0.55, 0.32, 0.22)
+		"gold", "gold_bar":
+			return Color(0.85, 0.68, 0.15)
+		"silver", "silver_bar":
+			return Color(0.82, 0.83, 0.85)
+		"platinum", "platinum_bar":
+			return Color(0.72, 0.8, 0.88)
+		"slopium", "slopium_bar":
+			return Color(0.55, 0.95, 0.25)
 		_:
 			return Color(1, 1, 1)
 

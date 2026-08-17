@@ -1,0 +1,51 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_objects/resource_node.gd" id="1"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_1"]
+radius = 0.7
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rock"]
+albedo_color = Color(0.48, 0.48, 0.5, 1)
+roughness = 0.9
+
+[sub_resource type="SphereMesh" id="SphereMesh_rock"]
+material = SubResource("StandardMaterial3D_rock")
+radius = 0.7
+height = 1.4
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_vein"]
+albedo_color = Color(0.55, 0.32, 0.22, 1)
+roughness = 0.75
+
+[sub_resource type="BoxMesh" id="BoxMesh_vein"]
+material = SubResource("StandardMaterial3D_vein")
+size = Vector3(0.3, 0.22, 0.22)
+
+[node name="IronOre" type="StaticBody3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+resource_type = "iron"
+max_amount = 800
+respawn_time = 50.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.5, 0)
+shape = SubResource("SphereShape3D_1")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.42, 0)
+scale = Vector3(1, 0.6, 0.85)
+mesh = SubResource("SphereMesh_rock")
+
+[node name="VeinA" type="MeshInstance3D" parent="."]
+position = Vector3(0.25, 0.4, 0.2)
+rotation_degrees = Vector3(10, 25, 5)
+mesh = SubResource("BoxMesh_vein")
+
+[node name="VeinB" type="MeshInstance3D" parent="."]
+position = Vector3(-0.2, 0.32, -0.15)
+rotation_degrees = Vector3(-5, -30, 8)
+scale = Vector3(0.7, 0.7, 0.7)
+mesh = SubResource("BoxMesh_vein")

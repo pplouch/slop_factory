@@ -1,8 +1,9 @@
 extends Node
 ## Biomes (Registry pattern, autoload). Each biome defines what a chunk in
 ## its territory looks like (ground tint + terrain relief amplitude) and
-## what it can contain: 1-2 resource-node scenes (some shared with other
-## biomes, at least one usually unique) and 1-3 enemy kinds (see
+## what it can contain: 2-3 resource-node scenes (some shared with other
+## biomes, at least one usually unique -- 5 of the 7 biomes also get their
+## own ore, see IRON_ORE_SCENE etc. below) and 1-3 enemy kinds (see
 ## EnemyKinds) that don't spawn anywhere else. Chunk asks
 ## `biome_for_world_pos` to decide a new chunk's biome, then reads this
 ## data to populate it.
@@ -53,6 +54,14 @@ const MUSHROOM_SCENE: PackedScene = preload("res://scenes/world_objects/mushroom
 const CACTUS_SCENE: PackedScene = preload("res://scenes/world_objects/cactus.tscn")
 const ICE_CRYSTAL_SCENE: PackedScene = preload("res://scenes/world_objects/ice_crystal.tscn")
 const OBSIDIAN_SCENE: PackedScene = preload("res://scenes/world_objects/obsidian_shard.tscn")
+# Ores (see feature backlog 2: "Add more resources... which are ores"),
+# one per biome below, each processed by Foundry into its matching bar --
+# see scripts/buildings/foundry.gd.
+const IRON_ORE_SCENE: PackedScene = preload("res://scenes/world_objects/iron_ore.tscn")
+const GOLD_ORE_SCENE: PackedScene = preload("res://scenes/world_objects/gold_ore.tscn")
+const SILVER_ORE_SCENE: PackedScene = preload("res://scenes/world_objects/silver_ore.tscn")
+const PLATINUM_ORE_SCENE: PackedScene = preload("res://scenes/world_objects/platinum_ore.tscn")
+const SLOPIUM_ORE_SCENE: PackedScene = preload("res://scenes/world_objects/slopium_ore.tscn")
 
 ## Radius (world units) of the always-plains starting area around the
 ## origin, where founder blobs spawn and the player builds first -- kept
@@ -183,7 +192,7 @@ func _ready() -> void:
 	lake_noise.frequency = 0.006
 
 	_register(Biome.new("plains", "Plains", Color(0.29, 0.56, 0.24), 0.4,
-		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": ROCK_SCENE, "resource_type": "stone"}],
+		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": IRON_ORE_SCENE, "resource_type": "iron"}],
 		["slime"]
 	))
 	_register(Biome.new("forest", "Forest", Color(0.16, 0.42, 0.2), 0.6,
@@ -191,15 +200,15 @@ func _ready() -> void:
 		["wolf", "spider"]
 	))
 	_register(Biome.new("desert", "Desert", Color(0.76, 0.68, 0.42), 0.7,
-		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": CACTUS_SCENE, "resource_type": "cactus_fiber"}],
+		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": CACTUS_SCENE, "resource_type": "cactus_fiber"}, {"scene": GOLD_ORE_SCENE, "resource_type": "gold"}],
 		["scorpion", "bandit"]
 	))
 	_register(Biome.new("tundra", "Tundra", Color(0.82, 0.87, 0.92), 0.5,
-		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": ICE_CRYSTAL_SCENE, "resource_type": "ice_crystal"}],
+		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": ICE_CRYSTAL_SCENE, "resource_type": "ice_crystal"}, {"scene": SILVER_ORE_SCENE, "resource_type": "silver"}],
 		["yeti", "wolf"]
 	))
 	_register(Biome.new("swamp", "Swamp", Color(0.24, 0.3, 0.2), 0.35,
-		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": MUSHROOM_SCENE, "resource_type": "mushroom"}],
+		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": MUSHROOM_SCENE, "resource_type": "mushroom"}, {"scene": SLOPIUM_ORE_SCENE, "resource_type": "slopium"}],
 		["leech", "spider"]
 	))
 	_register(Biome.new("jungle", "Jungle", Color(0.11, 0.48, 0.16), 0.6,
@@ -207,7 +216,7 @@ func _ready() -> void:
 		["panther", "wolf"]
 	))
 	_register(Biome.new("volcanic", "Volcanic", Color(0.28, 0.14, 0.12), 0.9,
-		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": OBSIDIAN_SCENE, "resource_type": "obsidian"}],
+		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": OBSIDIAN_SCENE, "resource_type": "obsidian"}, {"scene": PLATINUM_ORE_SCENE, "resource_type": "platinum"}],
 		["imp", "scorpion"]
 	))
 

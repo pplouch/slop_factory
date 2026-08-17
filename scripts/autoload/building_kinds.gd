@@ -96,6 +96,16 @@ func _ready() -> void:
 		["Buffer capacity +4", "Buffer capacity +4 again"],
 		16.0, Color(0.3, 0.55, 0.68)
 	))
+	# Foundry smelts any one of the 5 ores (see scripts/buildings/foundry.gd)
+	# into its matching bar -- one building covering all 5 rather than a
+	# fixed single-recipe Processor per ore.
+	_register(Kind.new(
+		"foundry", "Foundry", "res://scenes/buildings/foundry.tscn", 80,
+		[Vector2i(0, -1)], [Vector2i(0, 1)], 100, "town_hall",
+		120, [50, 100],
+		["Smelt time -20%", "Smelt time -20% again"],
+		24.0, Color(0.32, 0.28, 0.26)
+	))
 	# Wall and Belt are LinkableBuilding entries (see scripts/core/linkable_building.gd)
 	# rather than fixed always-available factory pieces -- they still need to
 	# stay available from the very start, though (a new player has no Town
