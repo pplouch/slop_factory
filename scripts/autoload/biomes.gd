@@ -108,6 +108,16 @@ const HUMIDITY_DRY := 0.35
 const VOLCANIC_THRESHOLD := 0.4
 const RIVER_HALF_WIDTH := 0.035
 const LAKE_THRESHOLD := 0.35
+## Deep water is a strict subset of "any water" at a stricter threshold/
+## narrower band, always leaving a shallow ring/edge between deep water and
+## dry land -- see is_deep_water_at. Units can wade the shallow border (to
+## gather or build a Water Extractor) but not the deep core; margins picked
+## so the shallow band reads as clearly present without swallowing the
+## whole feature (a river's central 40% is deep vs. its outer 60% shallow;
+## a lake's threshold is nudged up by DEEP_LAKE_MARGIN so a meaningful ring
+## around its edge stays shallow).
+const DEEP_RIVER_FRACTION := 0.4
+const DEEP_LAKE_MARGIN := 0.08
 ## Nothing counts as water this close to the origin, so founder blobs never
 ## spawn standing in a lake.
 const WATER_SAFE_RADIUS := 12.0
@@ -265,6 +275,18 @@ func is_lake_at(world_x: float, world_z: float) -> bool:
 ## by height_at/Chunk's ground-vertex coloring, which don't care which.
 func is_water_at(world_x: float, world_z: float) -> bool:
 	return is_river_at(world_x, world_z) or is_lake_at(world_x, world_z)
+
+## Whether `world_x`/`world_z` is *deep* water specifically -- a stricter
+## subset of is_water_at (see DEEP_RIVER_FRACTION/DEEP_LAKE_MARGIN above)
+## that PathingManager blocks units from entering, unlike the shallow
+## border ring around it. Always implies is_water_at is also true, since
+## both thresholds here are strictly tighter than the plain water ones.
+func is_deep_water_at(world_x: float, world_z: float) -> bool:
+	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
+		return false
+	if absf(river_noise.get_noise_2d(world_x, world_z)) < RIVER_HALF_WIDTH * DEEP_RIVER_FRACTION:
+		return true
+	return lake_noise.get_noise_2d(world_x, world_z) > LAKE_THRESHOLD + DEEP_LAKE_MARGIN
 
 ## Whether `world_x`/`world_z` is a rare volcanic hotspot, checked before
 ## the temperature/humidity climate grid.

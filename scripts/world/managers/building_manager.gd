@@ -201,7 +201,7 @@ func _refresh_water_extractor_indicators(center_cell: Vector2i) -> void:
 		for dx in range(-r, r + 1):
 			var cell := center_cell + Vector2i(dx, dy)
 			var world_pos := grid_to_world(cell)
-			if not Biomes.is_water_at(world_pos.x, world_pos.z):
+			if not Biomes.is_water_at(world_pos.x, world_pos.z) or Biomes.is_deep_water_at(world_pos.x, world_pos.z):
 				continue
 			var indicator := MeshInstance3D.new()
 			var mesh := BoxMesh.new()
@@ -422,7 +422,10 @@ func is_placement_valid(cell: Vector2i) -> bool:
 	if _build_selected_kind == "extractor":
 		return _find_resource_node_near(world_pos) != null
 	if _build_selected_kind == "water_extractor":
-		return Biomes.is_water_at(world_pos.x, world_pos.z)
+		# Shallow water only, not deep -- a blob has to be able to walk up
+		# to it to finish construction (see PathingManager.setup, which
+		# blocks deep water from the pathing grid entirely).
+		return Biomes.is_water_at(world_pos.x, world_pos.z) and not Biomes.is_deep_water_at(world_pos.x, world_pos.z)
 	# Every other kind is a land structure -- Water Extractor above is the
 	# one deliberate exception that *requires* water instead of forbidding it.
 	if Biomes.is_water_at(world_pos.x, world_pos.z):

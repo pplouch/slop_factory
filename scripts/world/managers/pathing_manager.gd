@@ -19,14 +19,25 @@ const PATHING_GRID_HALF_SIZE := 90.0
 var _grid := AStarGrid2D.new()
 
 
-## Builds the pathing grid as one big walkable plane; individual cells go
-## solid as blocking structures are placed (see mark_cell).
+## Builds the pathing grid as one big walkable plane, except deep water
+## (see Biomes.is_deep_water_at) marked solid upfront from terrain data
+## rather than reactively like a placed structure -- units can wade the
+## shallow border around a lake/river (to gather water or build a Water
+## Extractor, itself placement-gated to shallow water for the same reason:
+## a blob has to be able to reach it to finish building it) but not the
+## deep water itself. Individual cells also go solid as blocking structures
+## are placed later (see mark_cell).
 func setup() -> void:
 	var half := int(PATHING_GRID_HALF_SIZE / BuildingManager.GRID_CELL_SIZE)
 	_grid.region = Rect2i(-half, -half, half * 2, half * 2)
 	_grid.cell_size = Vector2(BuildingManager.GRID_CELL_SIZE, BuildingManager.GRID_CELL_SIZE)
 	_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ALWAYS
 	_grid.update()
+	for gy in range(-half, half):
+		for gx in range(-half, half):
+			var world_pos := BuildingManager.grid_to_world(Vector2i(gx, gy))
+			if Biomes.is_deep_water_at(world_pos.x, world_pos.z):
+				_grid.set_point_solid(Vector2i(gx, gy), true)
 
 ## Marks `cell` solid/clear in the pathing grid, e.g. when a wall/building is
 ## placed or demolished. No-ops silently if `cell` falls outside the grid's
