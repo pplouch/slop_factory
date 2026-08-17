@@ -11,6 +11,7 @@ extends Node3D
 ##  - SelectionManager: mouse-driven unit selection/hover
 ##  - OrderManager: standing orders + right-click order issuing
 ##  - DebugOverlayManager: everything DebugMenu's buttons drive
+##  - FogManager: sticky fog-of-war shared by Minimap and the 3D ground mask
 ##
 ## Managers are plain RefCounted objects, not scene-tree Nodes -- they hold a
 ## `_world` reference back to this node for whatever needs add_child/
@@ -46,10 +47,11 @@ const MASK_RESOURCES := 4
 @onready var resource_info_panel = $ResourceInfoPanel
 @onready var enemy_info_panel = $EnemyInfoPanel
 
-# Half-size used for the minimap's world<->local mapping -- not a hard map
-# edge (chunks stream in however far the camera can reach), just a generous
-# fixed scale, independently tuned from CameraRig.BOUNDS.
-const MINIMAP_HALF_SIZE := 90.0
+# Half-size used for the minimap's world<->local mapping and the 3D fog
+# plane's coverage -- not a hard map edge (chunks stream in however far the
+# camera can reach), just a generous fixed scale, independently tuned from
+# CameraRig.BOUNDS.
+const FOG_HALF_SIZE := 90.0
 
 var _chunk_manager := ChunkManager.new()
 var _pathing_manager := PathingManager.new()
@@ -58,6 +60,7 @@ var _spawn_manager := SpawnManager.new()
 var _selection_manager := SelectionManager.new()
 var _order_manager := OrderManager.new()
 var _debug_overlay_manager := DebugOverlayManager.new()
+var _fog_manager := FogManager.new()
 
 
 ## Godot lifecycle hook: wires up every manager (in dependency order --
@@ -69,7 +72,7 @@ var _debug_overlay_manager := DebugOverlayManager.new()
 ## whichever manager now owns that behavior. Every other object (blobs,
 ## buildings, UI) already exists as scene children.
 func _ready() -> void:
-	minimap.set_world_bounds(MINIMAP_HALF_SIZE)
+	minimap.set_world_bounds(FOG_HALF_SIZE)
 
 	_chunk_manager.setup(self)
 	_pathing_manager.setup()
@@ -78,6 +81,8 @@ func _ready() -> void:
 	_selection_manager.setup(self)
 	_order_manager.setup(self, _selection_manager)
 	_debug_overlay_manager.setup(self)
+	_fog_manager.setup(self, FOG_HALF_SIZE)
+	minimap.fog_texture = _fog_manager.fog_texture
 
 	_spawn_manager.spawn_founder_blobs()
 	_chunk_manager.ensure_chunks_loaded(Vector3.ZERO)
@@ -116,9 +121,11 @@ func _move_camera_to(world_pos: Vector3) -> void:
 	camera_rig.position.z = world_pos.z
 
 ## Godot per-frame hook: delegates to ChunkManager, which internally only
-## re-checks chunk coverage every CHUNK_CHECK_INTERVAL, not every frame.
+## re-checks chunk coverage every CHUNK_CHECK_INTERVAL, not every frame; and
+## to FogManager, which reveals fog around blobs every frame.
 func _process(delta: float) -> void:
 	_chunk_manager.process(delta, camera_rig.position)
+	_fog_manager.process()
 
 ## Central input router: while build mode is active, every input goes to
 ## BuildingManager instead. Otherwise: left button drives selection (click
