@@ -13,10 +13,11 @@ const COLOR_HARVEST := Color(1.0, 0.8, 0.25)
 const COLOR_PATROL := Color(0.4, 0.7, 1.0)
 
 # A right-click harvest order spreads selected blobs across same-type nodes
-# within this radius of the click, capping how many pile onto any one node,
-# so a squad doesn't all crowd (and physically jam) a single tree.
+# within this radius of the click, capping how many pile onto any one node
+# (see TaskLock.MAX_WORKERS_PER_TARGET, shared with BuildingManager's own
+# per-building cap so the two stay in sync), so a squad doesn't all crowd
+# (and physically jam) a single tree.
 const MAX_HARVEST_SPREAD_RADIUS := 16.0
-const MAX_BLOBS_PER_NODE := 2
 
 # -- Gathering tools (see Blob.equipped_item) --
 # Animals (food) and water sources are only harvestable by a blob carrying
@@ -139,19 +140,28 @@ func _group_move_tolerance() -> float:
 	return min(MAX_MOVE_TOLERANCE, max(0, _selection.selected_blobs.size() - 1) * MOVE_TOLERANCE_PER_EXTRA_BLOB)
 
 ## Assigns each selected blob to a nearby node of the same resource type as
-## `clicked_node`, spreading the squad across up to MAX_BLOBS_PER_NODE nodes
+## `clicked_node`, spreading the squad across up to TaskLock.MAX_WORKERS_PER_TARGET nodes
 ## within MAX_HARVEST_SPREAD_RADIUS instead of sending everyone to the exact
 ## node clicked. Each blob picks its own closest still-available node, and
 ## gets a deterministic (evenly-spaced) approach angle around it so two
 ## blobs assigned to the same node don't both aim for the same spot and jam
 ## each other. Falls back to piling everyone onto the closest candidate if
 ## every nearby node of that type is already at capacity.
+##
+## Capacity is checked via TaskLock.harvest_count -- a *live* count of every
+## blob in the world currently targeting each candidate node, not a count
+## scoped to just this call. A dict scoped to this call alone (the previous
+## approach) had no idea a node was already fully worked by an *earlier*
+## order, so a second group order issued later could still stack more than
+## TaskLock.MAX_WORKERS_PER_TARGET workers onto the same node (see feature backlog:
+## "units should lock a task so others pursue one that isn't locked").
 func _issue_harvest_orders(clicked_node: Node) -> void:
 	var target_type: String = clicked_node.resource_type
 	var origin: Vector3 = clicked_node.global_position
+	var tree := _world.get_tree()
 
 	var candidates: Array = []
-	for n in _world.get_tree().get_nodes_in_group("resource_nodes"):
+	for n in tree.get_nodes_in_group("resource_nodes"):
 		if n.resource_type == target_type and n.global_position.distance_to(origin) <= MAX_HARVEST_SPREAD_RADIUS:
 			candidates.append(n)
 	if candidates.is_empty():
@@ -163,7 +173,6 @@ func _issue_harvest_orders(clicked_node: Node) -> void:
 	# player understands why nothing happened.
 	var required_item: String = ITEM_REQUIRED_FOR_RESOURCE.get(target_type, "")
 
-	var assigned_count: Dictionary = {}
 	for blob in _selection.selected_blobs:
 		if required_item != "" and blob.equipped_item != required_item:
 			Effects.spawn_floating_text(_world, blob.global_position + Vector3(0.0, 1.6, 0.0), "Needs a %s!" % required_item.capitalize(), Color(1.0, 0.35, 0.3))
@@ -171,7 +180,7 @@ func _issue_harvest_orders(clicked_node: Node) -> void:
 		var best_node: Node = null
 		var best_dist := INF
 		for n in candidates:
-			if assigned_count.get(n, 0) >= MAX_BLOBS_PER_NODE:
+			if TaskLock.harvest_count(tree, n) >= TaskLock.MAX_WORKERS_PER_TARGET:
 				continue
 			var d: float = blob.global_position.distance_to(n.global_position)
 			if d < best_dist:
@@ -185,9 +194,11 @@ func _issue_harvest_orders(clicked_node: Node) -> void:
 					best_dist = d
 					best_node = n
 		if best_node:
-			var slot: int = assigned_count.get(best_node, 0)
-			assigned_count[best_node] = slot + 1
-			var angle := (TAU / MAX_BLOBS_PER_NODE) * slot
+			# command_harvest() below sets pending_harvest_node synchronously,
+			# so this slot count (and every subsequent blob's own
+			# TaskLock.harvest_count query above) already reflects it --
+			# no separate running tally needed.
+			var angle := (TAU / TaskLock.MAX_WORKERS_PER_TARGET) * TaskLock.harvest_count(tree, best_node)
 			blob.command_harvest(best_node, angle)
 
 ## Sends every currently-selected blob to help construct `building` (any
@@ -195,6 +206,11 @@ func _issue_harvest_orders(clicked_node: Node) -> void:
 ## approach angle around it -- the same "don't all aim for the same spot"
 ## trick _issue_harvest_orders uses for resource nodes -- so a squad sent to
 ## build doesn't jam each other trying to stand in the same place.
+## Deliberately NOT capped by TaskLock.MAX_WORKERS_PER_TARGET the way
+## harvest orders and BuildingManager's own auto-assign are -- the player
+## explicitly right-clicked *this* building wanting it built, so honoring
+## that concentrated effort takes priority over the ambient "don't crowd
+## one target" rule those other two paths exist to enforce.
 func _issue_build_orders(building: Node) -> void:
 	var blobs := _selection.selected_blobs
 	for i in blobs.size():

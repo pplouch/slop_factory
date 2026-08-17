@@ -534,24 +534,22 @@ func try_place_structure() -> void:
 	refresh_neighbor_visuals(_build_ghost_cell)
 	_update_ghost_validity()
 
-## Number of currently-idle blobs automatically sent to help build a freshly-
-## placed structure (see _auto_assign_builders) -- capped rather than
-## grabbing every idle blob in the world for one wall, matching
-## OrderManager's own MAX_BLOBS_PER_NODE-style "don't crowd one target"
-## precedent for harvest orders.
-const AUTO_ASSIGN_BUILDER_CAP := 2
-
-## Sends up to AUTO_ASSIGN_BUILDER_CAP currently-idle blobs (closest first)
-## to help construct a freshly-placed building automatically, so the player
-## doesn't have to select workers and right-click every new placement by
-## hand (see feature backlog: "when creating a new building, assign free
-## workers to build it"). Mirrors OrderManager._issue_build_orders' own
-## evenly-spaced-approach-angle trick so multiple assigned blobs don't all
-## aim for the same spot, just auto-triggered here instead of player-issued,
-## and sourced from every idle blob in the world rather than the current
-## selection. A no-op if no blob is currently idle -- ConstructState's own
-## "keep building whatever's still unfinished" loop (see
-## Blob._next_build_or_idle) means a worker that frees up later from
+## Sends up to TaskLock.MAX_WORKERS_PER_TARGET currently-idle blobs (closest
+## first) to help construct a freshly-placed building automatically, so the
+## player doesn't have to select workers and right-click every new
+## placement by hand (see feature backlog: "when creating a new building,
+## assign free workers to build it"). Mirrors OrderManager._issue_build_orders'
+## own evenly-spaced-approach-angle trick so multiple assigned blobs don't
+## all aim for the same spot, just auto-triggered here instead of player-
+## issued, and sourced from every idle blob in the world rather than the
+## current selection. Shares the same cap as OrderManager's harvest orders
+## (see TaskLock) rather than its own separately-tuned number, so an ambient
+## assignment never crowds a building any harder than a resource node would
+## be crowded -- always exactly TaskLock.MAX_WORKERS_PER_TARGET here since
+## this only ever runs the instant a building is freshly placed (nothing
+## else could have targeted it yet). A no-op if no blob is currently idle --
+## ConstructState's own "keep building whatever's still unfinished" loop
+## (see Blob._next_build_or_idle) means a worker that frees up later from
 ## somewhere else will still find and finish this one on its own.
 func _auto_assign_builders(building: Node3D) -> void:
 	var idle_blobs: Array = []
@@ -562,7 +560,7 @@ func _auto_assign_builders(building: Node3D) -> void:
 		return
 	idle_blobs.sort_custom(func(a, b):
 		return a.global_position.distance_to(building.global_position) < b.global_position.distance_to(building.global_position))
-	var assigned: Array = idle_blobs.slice(0, AUTO_ASSIGN_BUILDER_CAP)
+	var assigned: Array = idle_blobs.slice(0, TaskLock.MAX_WORKERS_PER_TARGET)
 	for i in assigned.size():
 		var angle := (TAU / assigned.size()) * i
 		assigned[i].command_build(building, angle)

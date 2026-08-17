@@ -684,19 +684,39 @@ func _next_build_or_idle() -> BlobState:
 	return IdleState.new()
 
 ## Closest member of the "structures" or "buildings" groups that's still
-## under construction, or null -- both groups since Town Hall (unlike every
-## other BuildableStructure kind) only ever joins "buildings", not
-## "structures" (see Building._ready()); checking both, with duplicates
-## between them harmless for a plain nearest-search, avoids silently
-## skipping Town Hall here. Duck-typed via "is_under_construction" in n
-## since only BuildableStructure-based kinds (every real building, plus
-## Wall/Belt/Pipe/Road via LinkableBuilding) have that field at all;
-## Extractor/Processor/WaterExtractor ("no blob required", see their own
-## headers) never match.
+## under construction and not already at TaskLock.MAX_WORKERS_PER_TARGET
+## capacity, or null -- both groups since Town Hall (unlike every other
+## BuildableStructure kind) only ever joins "buildings", not "structures"
+## (see Building._ready()); checking both, with duplicates between them
+## harmless for a plain nearest-search, avoids silently skipping Town Hall
+## here. Duck-typed via "is_under_construction" in n since only
+## BuildableStructure-based kinds (every real building, plus Wall/Belt/Pipe/
+## Road via LinkableBuilding) have that field at all; Extractor/Processor/
+## WaterExtractor ("no blob required", see their own headers) never match.
+##
+## Skips a target already at capacity so several blobs freeing up around
+## the same time spread across *different* unfinished buildings instead of
+## all independently picking the exact same "nearest one" and piling on
+## while something else sits completely unworked (see feature backlog:
+## "units should lock a task so others pursue one that isn't locked") --
+## falls back to piling on the closest one anyway if every unfinished
+## structure is already at capacity, the same two-pass shape
+## OrderManager._issue_harvest_orders uses.
 func _find_nearest_unfinished_structure() -> Node:
+	var candidates := get_tree().get_nodes_in_group("structures") + get_tree().get_nodes_in_group("buildings")
 	var nearest: Node = null
 	var nearest_dist := INF
-	var candidates := get_tree().get_nodes_in_group("structures") + get_tree().get_nodes_in_group("buildings")
+	for n in candidates:
+		if not is_instance_valid(n) or not ("is_under_construction" in n) or not n.is_under_construction:
+			continue
+		if TaskLock.build_count(get_tree(), n) >= TaskLock.MAX_WORKERS_PER_TARGET:
+			continue
+		var d := global_position.distance_to(n.global_position)
+		if d < nearest_dist:
+			nearest_dist = d
+			nearest = n
+	if nearest:
+		return nearest
 	for n in candidates:
 		if not is_instance_valid(n) or not ("is_under_construction" in n) or not n.is_under_construction:
 			continue
