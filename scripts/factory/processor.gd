@@ -48,15 +48,38 @@ func get_info_text() -> String:
 	]
 
 ## Godot per-frame hook: advances an in-progress batch, or starts a new one
-## once enough input has been buffered.
+## once enough input has been buffered *and* the output side has room (see
+## _output_is_free) -- doesn't apply to a genuinely empty output cell,
+## which still auto-collects to the stockpile in _finish_batch, only to an
+## output belt that's already holding an item. Since BeltSegment stopped
+## auto-collecting an unlinked run into the stockpile (see feature backlog
+## 2: "resources should be stuck, not destroyed"), a belt at a dead end
+## now stays occupied indefinitely rather than clearing within a frame or
+## two -- without this check, every batch after the first would still
+## "finish" and bypass straight to the stockpile instead of ever visibly
+## riding the belt, since _finish_batch's own fallback silently succeeds
+## whenever the belt rejects delivery.
 func _process(delta: float) -> void:
 	if _is_processing:
 		_processing_elapsed += delta
 		if _processing_elapsed >= PROCESS_TIME:
 			_finish_batch()
-	elif buffered_input >= INPUT_AMOUNT:
+	elif buffered_input >= INPUT_AMOUNT and _output_is_free():
 		_is_processing = true
 		_processing_elapsed = 0.0
+
+## Whether the structure (if any) in this processor's output cell has room
+## right now -- true if the cell is empty (nothing to wait on, _finish_batch
+## auto-collects) or holds something without a single-slot `current_item`
+## field; false only when it's specifically a BeltSegment already holding
+## an item, the one receiver kind that can stay full indefinitely.
+func _output_is_free() -> bool:
+	var world = get_parent()
+	var my_cell: Vector2i = world.world_to_grid(global_position)
+	var output_structure: Node = world.get_structure_at(my_cell + facing)
+	if output_structure == null:
+		return true
+	return not ("current_item" in output_structure and output_structure.current_item != null)
 
 ## Accepts `item` into the input buffer if it's the recipe's input type and
 ## there's room for it (capped at one recipe's worth waiting at a time, so

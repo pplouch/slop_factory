@@ -105,13 +105,21 @@ func try_receive_input(item: Node3D, _from_direction: Vector2i = Vector2i.ZERO) 
 	return true
 
 ## Godot per-frame hook: advances an in-progress batch, or starts a new one
-## once a full batch of the locked ore type has been buffered.
+## once a full batch of the locked ore type has been buffered *and* the
+## output side has room (see _output_is_free) -- doesn't apply to a
+## genuinely empty output cell, which still auto-collects to the stockpile
+## in _finish_batch, only to an output belt already holding a bar. Without
+## this, a Foundry feeding a dead-end belt would still "finish" every batch
+## and bypass straight to the stockpile instead of ever visibly producing a
+## bar onto the belt, since BeltSegment no longer auto-collects an unlinked
+## run (see feature backlog 2: "resources should be stuck, not destroyed") --
+## _finish_batch's own fallback would otherwise silently paper over that.
 func _process(delta: float) -> void:
 	if _is_processing:
 		_processing_elapsed += delta
 		if _processing_elapsed >= _effective_process_time():
 			_finish_batch()
-	elif _buffered_count >= ORE_PER_BATCH:
+	elif _buffered_count >= ORE_PER_BATCH and _output_is_free():
 		_is_processing = true
 		_processing_elapsed = 0.0
 
@@ -119,6 +127,19 @@ func _process(delta: float) -> void:
 ## (see PROCESS_TIME_REDUCTION_PER_LEVEL).
 func _effective_process_time() -> float:
 	return PROCESS_TIME * (1.0 - min(upgrade_level, 2) * PROCESS_TIME_REDUCTION_PER_LEVEL)
+
+## Whether the structure (if any) in this foundry's output cell has room
+## right now -- true if the cell is empty (nothing to wait on) or holds
+## something without a single-slot `current_item` field; false only when
+## it's specifically a BeltSegment already holding an item, the one
+## receiver kind that can stay full indefinitely.
+func _output_is_free() -> bool:
+	var world = get_parent()
+	var my_cell: Vector2i = world.world_to_grid(global_position)
+	var output_structure: Node = world.get_structure_at(my_cell + OUTPUT_PORT)
+	if output_structure == null:
+		return true
+	return not ("current_item" in output_structure and output_structure.current_item != null)
 
 ## Completes a smelting batch: consumes ORE_PER_BATCH of the buffered ore
 ## and either hands the resulting bar to whatever's in the output cell or,

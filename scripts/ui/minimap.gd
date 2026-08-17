@@ -27,9 +27,20 @@ const DOT_BUILDING := Color(0.95, 0.85, 0.3)
 const DOT_BLOB := Color(1, 1, 1)
 const DOT_ENEMY := Color(1, 0.2, 0.2)
 
-## Set externally by World right after FogManager.setup() -- null for the
-## brief window before that, so _draw() guards against it.
+## Set externally by World right after FogManager.setup() (see
+## set_fog_source) -- null for the brief window before that, so _draw()
+## guards against it.
 var fog_texture: ImageTexture
+## The fog texture's *own* world half-size (FogManager.world_half_size),
+## independent of and generally much larger than this minimap's own
+## _world_half_size below -- a minimap is deliberately a local overview,
+## while fog now covers as far as the camera can ever pan (see feature
+## backlog 3: fog used to share this minimap's own bound and only covered
+## a small area). _draw() crops fog_texture down to just the sub-region
+## this minimap actually shows rather than stretching the whole (much
+## larger) texture across its rect, which would make the small revealed
+## area near the player shrink to a speck.
+var _fog_world_half_size := 90.0
 
 var _world_half_size := 75.0
 
@@ -38,6 +49,13 @@ var _world_half_size := 75.0
 ## rect correctly, whatever the actual map size is.
 func set_world_bounds(half_size: float) -> void:
 	_world_half_size = half_size
+
+## Called once by World right after FogManager.setup() -- `texture` is the
+## shared fog ImageTexture, `fog_half_size` is the world half-size *that
+## texture* covers (see _fog_world_half_size).
+func set_fog_source(texture: ImageTexture, fog_half_size: float) -> void:
+	fog_texture = texture
+	_fog_world_half_size = fog_half_size
 
 ## Godot per-frame hook: entity positions move every frame regardless of fog
 ## state, so this always redraws (FogManager.process(), called separately
@@ -82,5 +100,11 @@ func _draw() -> void:
 		if is_instance_valid(n):
 			draw_circle(_world_to_local(n.global_position), 2.5, DOT_BLOB)
 	if fog_texture:
-		draw_texture_rect(fog_texture, Rect2(Vector2.ZERO, size), false)
+		# UV span of this minimap's own (smaller) world_half_size within
+		# the fog texture's (larger) own -- see _fog_world_half_size.
+		var uv_min: float = (_fog_world_half_size - _world_half_size) / (2.0 * _fog_world_half_size)
+		var uv_max: float = (_fog_world_half_size + _world_half_size) / (2.0 * _fog_world_half_size)
+		var tex_size := Vector2(fog_texture.get_size())
+		var source := Rect2(Vector2(uv_min, uv_min) * tex_size, Vector2(uv_max - uv_min, uv_max - uv_min) * tex_size)
+		draw_texture_rect_region(fog_texture, Rect2(Vector2.ZERO, size), source)
 	draw_rect(Rect2(Vector2.ZERO, size), BORDER_COLOR, false, 2.0)

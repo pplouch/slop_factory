@@ -47,11 +47,21 @@ const MASK_RESOURCES := 4
 @onready var resource_info_panel = $ResourceInfoPanel
 @onready var enemy_info_panel = $EnemyInfoPanel
 
-# Half-size used for the minimap's world<->local mapping and the 3D fog
-# plane's coverage -- not a hard map edge (chunks stream in however far the
-# camera can reach), just a generous fixed scale, independently tuned from
-# CameraRig.BOUNDS.
-const FOG_HALF_SIZE := 90.0
+# Half-size used for the minimap's world<->local mapping -- deliberately
+# small and independent of FOG_HALF_SIZE below (a minimap is meant to be a
+# local overview; PathingManager.PATHING_GRID_HALF_SIZE shares this same
+# 90-unit scale too, its own still-unfixed instance of the same "doesn't
+# reach as far as the camera can pan" limitation).
+const MINIMAP_HALF_SIZE := 90.0
+# Half-size used for the 3D fog plane's coverage -- matches CameraRig.BOUNDS
+# exactly (not referenced directly since camera_rig.gd has no class_name;
+# kept in sync by hand, same as PATHING_GRID_HALF_SIZE's already-documented
+# independent tuning) so fog coverage reaches exactly as far as the camera
+# can ever pan -- the player can never reach an edge to see fog stop, which
+# is effectively "extends infinitely" from where it actually matters (see
+# feature backlog 3: fog previously used this same constant as
+# MINIMAP_HALF_SIZE, 90, which read as "fog only covers a small area").
+const FOG_HALF_SIZE := 2000.0
 
 var _chunk_manager := ChunkManager.new()
 var _pathing_manager := PathingManager.new()
@@ -72,7 +82,7 @@ var _fog_manager := FogManager.new()
 ## whichever manager now owns that behavior. Every other object (blobs,
 ## buildings, UI) already exists as scene children.
 func _ready() -> void:
-	minimap.set_world_bounds(FOG_HALF_SIZE)
+	minimap.set_world_bounds(MINIMAP_HALF_SIZE)
 
 	_chunk_manager.setup(self)
 	_pathing_manager.setup()
@@ -82,7 +92,7 @@ func _ready() -> void:
 	_order_manager.setup(self, _selection_manager)
 	_debug_overlay_manager.setup(self)
 	_fog_manager.setup(self, FOG_HALF_SIZE)
-	minimap.fog_texture = _fog_manager.fog_texture
+	minimap.set_fog_source(_fog_manager.fog_texture, _fog_manager.world_half_size)
 
 	_spawn_manager.spawn_founder_blobs()
 	_chunk_manager.ensure_chunks_loaded(Vector3.ZERO)

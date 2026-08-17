@@ -3,20 +3,24 @@ extends RefCounted
 ## Sticky fog-of-war (revealed cells never re-hide) shared by two views that
 ## must always agree with each other: Minimap's 2D overlay and a flat plane
 ## World builds in actual 3D space to darken the ground/buildings/units the
-## player hasn't explored yet. A single small Image (its alpha channel *is*
-## the fog -- 1.0 unexplored, 0.0 revealed) is the one source of truth,
-## exposed as `fog_texture`; both views just sample that same ImageTexture,
-## so revealing a cell here updates both for free with no extra sync code.
-## This used to be Minimap-only logic (a UI-only concept, "just" a visual
-## mask on a 2D overview) before the 3D plane needed the identical data.
+## player hasn't explored yet. A single Image (its alpha channel *is* the
+## fog -- 1.0 unexplored, 0.0 revealed) is the one source of truth, exposed
+## as `fog_texture`; both views just sample that same ImageTexture, so
+## revealing a cell here updates both for free with no extra sync code --
+## Minimap crops its own draw to just the (smaller) sub-region it actually
+## shows, see Minimap._fog_world_half_size, rather than sharing this
+## manager's own `world_half_size` for its local<->world mapping too.
 ##
 ## Coverage is capped at `world_half_size` on every side (see World's
-## FOG_HALF_SIZE) -- same fixed, generous-but-not-map-wide bound the minimap
-## already lived with (independently tuned from CameraRig.BOUNDS, which is
-## far larger); panning the camera outside it reaches ordinary unfogged
-## terrain, matching the minimap's own existing edge-of-coverage behavior.
+## FOG_HALF_SIZE, deliberately set to match CameraRig.BOUNDS exactly) so
+## fog reaches exactly as far as the camera can ever pan -- there's no
+## position the player can actually reach where fog coverage runs out
+## (previously this shared Minimap's own much smaller 90-unit bound,
+## which read as "fog only covers a small area near the origin").
+## FOG_RESOLUTION is scaled up alongside world_half_size to keep the same
+## per-cell world size (~3.9 units/cell) as before, not a coarser grid.
 
-const FOG_RESOLUTION := 48
+const FOG_RESOLUTION := 1024
 const VISION_RADIUS := 14.0  # world units a blob reveals around itself
 ## Height of the 3D fog plane above the ground -- irrelevant to draw order
 ## (the plane's material is no_depth_test + high render_priority, same
