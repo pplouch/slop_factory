@@ -25,7 +25,7 @@ collision_layer = 4
 collision_mask = 0
 script = ExtResource("1")
 resource_type = "obsidian"
-max_amount = 30
+max_amount = 300
 respawn_time = 55.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]

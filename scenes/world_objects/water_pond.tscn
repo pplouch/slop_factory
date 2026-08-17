@@ -19,7 +19,7 @@ collision_layer = 4
 collision_mask = 0
 script = ExtResource("1")
 resource_type = "water"
-max_amount = 80
+max_amount = 150
 respawn_time = 25.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]

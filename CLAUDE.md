@@ -183,7 +183,7 @@ A second, 11-item feature/bug list, handed over once the first backlog (above) w
 - [ ] Have a maximum population stat. Building houses increases it. Player shouldn't be able to hire blobs if max population is reached.
 - [ ] Smooth and improve terrain texture; water ridges should have a border texture to make them more realistic.
 - [ ] Units cannot walk in deep water, only on borders (to gather water or build Water Extractors).
-- [ ] Resource nodes hold more extractable resources (e.g. a tree ~200 wood, a rock ~1000 stone).
+- [x] Resource nodes hold more extractable resources (e.g. a tree ~200 wood, a rock ~1000 stone) — bumped every `ResourceNode` scene's `max_amount` (respawn timing untouched): wood 60→200, stone 40→1000 (the two numbers the backlog named exactly), cactus_fiber/ice_crystal 35→150, obsidian 30→300, mushroom 25→100, food 20→60, water 80→150 (pond) / 200→400 (lake). `Tree` previously had no explicit override at all (relying on `ResourceNode`'s own script defaults, which happened to already read `wood`/60) — gave it an explicit `resource_type`/`max_amount` like every other node scene now has, so a future default-value change elsewhere can't silently retune it. Verified via a direct-call debug hook reading each live node's actual `amount`/`max_amount` in-game.
 - [ ] Adapt all the different costs so they follow the game's flow (do this last, once the new content below exists).
 - [ ] Add more resources (Iron, Gold, Silver, Platinum, Slopium), which are ores.
 - [ ] Ores can be processed into a foundry (new building).
