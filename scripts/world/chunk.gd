@@ -115,7 +115,7 @@ func _build_ground_mesh() -> ArrayMesh:
 		var v := vertices[i]
 		var world_x := global_position.x + v.x
 		var world_z := global_position.z + v.z
-		var height: float = Biomes.height_at(world_x, world_z, biome)
+		var height: float = Biomes.height_at(world_x, world_z)
 		vertices[i] = Vector3(v.x, height, v.z)
 		colors[i] = Biomes.water_tint_at(world_x, world_z)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
