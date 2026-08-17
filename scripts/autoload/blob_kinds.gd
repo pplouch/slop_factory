@@ -81,9 +81,9 @@ class Kind:
 ## speed, haulers trade speed for capacity, brutes trade speed for harvest
 ## power. Only "worker" is available from the start (see
 ## GameManager.unlocked_blob_kinds); the rest form a simple knowledge-gated
-## unlock chain -- scout, then hauler, then brute, then builder -- so new
-## archetypes open up "over time" as the player researches rather than all
-## being hireable immediately (see feature backlog).
+## unlock chain -- scout, then hauler, then brute, then builder, then hero
+## -- so new archetypes open up "over time" as the player researches rather
+## than all being hireable immediately (see feature backlog).
 func _ready() -> void:
 	_default_id = "worker"
 	_register(Kind.new("worker", "Worker", 15, 1.0, 1.0, 1.0, 1.0, 0.55, 0.45, 0.95,
@@ -100,6 +100,15 @@ func _ready() -> void:
 	_register(Kind.new("builder", "Builder", 22, 1.0, 0.8, 0.7, 1.05, 0.11, 0.55, 0.92,
 		"Slower harvester, but constructs buildings far faster than anyone else.", 2.5,
 		60, "brute"))
+	# harvest_mult/capacity_mult double as attack_power/max_health scaling
+	# (see Blob._refresh_stats) -- both pushed well past Brute's own, making
+	# Hero unambiguously the hardest-hitting and toughest unit available.
+	# Its "special aptitudes" are explicitly future scope (see feature
+	# backlog: "we'll see later what the aptitudes are") -- for now it's
+	# just the strongest combat stat line of any kind, nothing more.
+	_register(Kind.new("hero", "Hero", 45, 1.1, 1.5, 2.2, 1.15, 0.85, 0.7, 1.0,
+		"Elite combat specialist -- highest attack power and toughness of any unit. Special aptitudes coming later.", 1.0,
+		80, "builder"))
 
 ## Thin covariant override: keeps callers' `var kind := BlobKinds.get_kind(id)`
 ## statically typed as `Kind` (with BlobKinds' own fields) rather than the
