@@ -6,6 +6,7 @@ extends CanvasLayer
 @onready var wood_label: Label = $Panel/HBox/WoodLabel
 @onready var stone_label: Label = $Panel/HBox/StoneLabel
 @onready var planks_label: Label = $Panel/HBox/PlanksLabel
+@onready var knowledge_label: Label = $Panel/HBox/KnowledgeLabel
 @onready var selected_label: Label = $Panel/HBox/SelectedLabel
 
 
@@ -17,6 +18,7 @@ func _ready() -> void:
 	_on_resource_changed("wood", GameManager.get_resource("wood"))
 	_on_resource_changed("stone", GameManager.get_resource("stone"))
 	_on_resource_changed("planks", GameManager.get_resource("planks"))
+	_on_resource_changed("knowledge", GameManager.get_resource("knowledge"))
 
 ## Signal handler for GameManager.resource_changed: updates the matching
 ## label's text and gives it a little "punch" pulse so the player notices
@@ -32,6 +34,9 @@ func _on_resource_changed(resource_type: String, total: int) -> void:
 		"planks":
 			planks_label.text = "Planks: %d" % total
 			_punch(planks_label)
+		"knowledge":
+			knowledge_label.text = "Knowledge: %d" % total
+			_punch(knowledge_label)
 
 ## Called by World whenever the blob selection changes, to keep the
 ## "Selected: N" readout current.

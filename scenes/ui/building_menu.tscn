@@ -128,16 +128,3 @@ text = "Hire Blobs"
 
 [node name="HireRows" type="VBoxContainer" parent="Panel/Scroll/VBox/HireSection"]
 layout_mode = 2
-
-[node name="HSeparatorC" type="HSeparator" parent="Panel/Scroll/VBox"]
-layout_mode = 2
-
-[node name="UnlockSection" type="VBoxContainer" parent="Panel/Scroll/VBox"]
-layout_mode = 2
-
-[node name="UnlockTitle" type="Label" parent="Panel/Scroll/VBox/UnlockSection"]
-layout_mode = 2
-text = "Unlock Buildings"
-
-[node name="UnlockRows" type="VBoxContainer" parent="Panel/Scroll/VBox/UnlockSection"]
-layout_mode = 2

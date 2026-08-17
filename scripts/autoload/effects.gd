@@ -123,5 +123,7 @@ func resource_color(resource_type: String) -> Color:
 			return Color(0.75, 0.9, 1.0)
 		"obsidian":
 			return Color(0.85, 0.4, 0.15)
+		"knowledge":
+			return Color(0.25, 0.65, 0.7)
 		_:
 			return Color(1, 1, 1)

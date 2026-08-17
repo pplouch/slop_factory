@@ -94,17 +94,21 @@ func _apply_construction_visual(fraction: float) -> void:
 			mesh.scale.y = height_fraction
 		mesh.position.y = base_position.y * height_fraction
 
-## Attempts to spend this instance's next upgrade level's wood cost (see
-## BuildingKinds.upgrade_costs). Returns whether it went through.
-## Subclasses with an extra effect on a successful purchase (Building's
-## spawn-timer speedup) override this and call `super.try_upgrade()` first.
+## Attempts to spend this instance's next upgrade level's knowledge cost
+## (see BuildingKinds.upgrade_costs) -- knowledge, not wood, since a
+## per-building "perk" tier is the same kind of spend as the tech tree's
+## building-unlock tiers (see GameManager.try_unlock_building), both
+## sourced from ResearchCenter rather than ordinary gathering. Returns
+## whether it went through. Subclasses with an extra effect on a successful
+## purchase (Building's spawn-timer speedup) override this and call
+## `super.try_upgrade()` first.
 func try_upgrade() -> bool:
 	if is_under_construction:
 		return false
 	var kind := BuildingKinds.get_kind(kind_id)
 	if upgrade_level >= kind.upgrade_costs.size():
 		return false
-	if not GameManager.try_spend_wood(kind.upgrade_costs[upgrade_level]):
+	if not GameManager.try_spend("knowledge", kind.upgrade_costs[upgrade_level]):
 		return false
 	upgrade_level += 1
 	return true

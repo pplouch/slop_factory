@@ -1,6 +1,6 @@
 [gd_scene load_steps=6 format=3]
 
-[ext_resource type="Script" path="res://scripts/buildings/simple_building.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/buildings/research_center.gd" id="1"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wall"]
 albedo_color = Color(0.55, 0.58, 0.62, 1)
@@ -41,3 +41,7 @@ mesh = SubResource("BoxMesh_walls")
 [node name="Dome" type="MeshInstance3D" parent="."]
 position = Vector3(0, 3.0, 0)
 mesh = SubResource("SphereMesh_dome")
+
+[node name="KnowledgeTimer" type="Timer" parent="."]
+wait_time = 8.0
+autostart = true

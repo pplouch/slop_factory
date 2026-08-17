@@ -57,6 +57,7 @@ var resources: Dictionary = {
 	"wood": 100,
 	"stone": 100,
 	"planks": 100,
+	"knowledge": 100,
 }
 
 var upgrade_levels: Dictionary = {
@@ -148,6 +149,23 @@ func try_spend_wood(cost: int) -> bool:
 	resource_changed.emit("wood", resources["wood"])
 	return true
 
+## Whether the player currently has enough of `resource_type` to spend `cost`
+## on it. Generic counterpart to can_afford_cost (which always assumes
+## wood) -- used by the tech tree and per-building upgrades, both of which
+## spend "knowledge" (see ResearchCenter/BuildableStructure.try_upgrade)
+## rather than wood.
+func can_afford(resource_type: String, cost: int) -> bool:
+	return get_resource(resource_type) >= cost
+
+## Attempts to spend `cost` of `resource_type`. Generic counterpart to
+## try_spend_wood.
+func try_spend(resource_type: String, cost: int) -> bool:
+	if not can_afford(resource_type, cost):
+		return false
+	resources[resource_type] = resources.get(resource_type, 0) - cost
+	resource_changed.emit(resource_type, resources[resource_type])
+	return true
+
 ## Multiplier blobs should apply to their base movement speed, given the
 ## current "speed" upgrade level.
 func get_speed_multiplier() -> float:
@@ -179,24 +197,26 @@ func is_building_unlocked(building_id: String) -> bool:
 
 ## Whether `building_id` can be unlocked right now: it exists, isn't already
 ## unlocked, its prerequisite (if any) is already unlocked, and the player
-## can afford its wood cost. Used to grey out BuildingMenu's unlock buttons.
+## can afford its knowledge cost. Used to grey out TechTreePanel's unlock
+## buttons. Knowledge (not wood) is what the tech tree spends -- see
+## ResearchCenter, its source -- so building tiers have their own economy
+## distinct from the wood spent placing/upgrading an individual instance.
 func can_unlock_building(building_id: String) -> bool:
 	var kind = BuildingKinds.get_kind(building_id)
 	if kind == null or is_building_unlocked(building_id):
 		return false
 	if kind.requires != "" and not is_building_unlocked(kind.requires):
 		return false
-	return get_resource("wood") >= kind.unlock_cost
+	return can_afford("knowledge", kind.unlock_cost)
 
-## Attempts to unlock `building_id`: spends the wood and marks it unlocked
-## (emitting building_unlocked) if eligible, otherwise leaves state
+## Attempts to unlock `building_id`: spends the knowledge and marks it
+## unlocked (emitting building_unlocked) if eligible, otherwise leaves state
 ## untouched. Returns whether the unlock went through.
 func try_unlock_building(building_id: String) -> bool:
 	if not can_unlock_building(building_id):
 		return false
 	var kind = BuildingKinds.get_kind(building_id)
-	resources["wood"] -= kind.unlock_cost
-	resource_changed.emit("wood", resources["wood"])
+	try_spend("knowledge", kind.unlock_cost)
 	unlocked_buildings[building_id] = true
 	building_unlocked.emit(building_id)
 	return true

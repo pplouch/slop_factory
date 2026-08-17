@@ -113,19 +113,23 @@ func _ready() -> void:
 		[],
 		6.0
 	))
-	# The next 5 are stub buildings (see scripts/buildings/simple_building.gd
+	# Research Center is the tech tree's knowledge source (see
+	# scripts/buildings/research_center.gd) -- its own upgrade tiers boost
+	# its production rate, priced in knowledge like every other tier/perk
+	# (see BuildableStructure.try_upgrade).
+	_register(Kind.new(
+		"research_center", "Research Center", "res://scenes/buildings/research_center.tscn", 60,
+		[], [], 80, "town_hall",
+		110, [40, 80],
+		["Knowledge trickle +50%", "Knowledge trickle +50% again"],
+		22.0
+	))
+	# The next 4 are stub buildings (see scripts/buildings/simple_building.gd
 	# and CLAUDE.md's feature backlog: "New building stubs, logic not
 	# required yet") -- construction/durability/upgrades already work via
 	# BuildableStructure, but none of them do anything special yet, so all
 	# leave input_ports/output_ports/upgrade_costs/upgrade_perks empty rather
 	# than describing effects/connections that don't exist.
-	_register(Kind.new(
-		"research_center", "Research Center", "res://scenes/buildings/research_center.tscn", 60,
-		[], [], 80, "town_hall",
-		110, [],
-		[],
-		22.0
-	))
 	_register(Kind.new(
 		"vegetable_patch", "Patch of Vegetables", "res://scenes/buildings/vegetable_patch.tscn", 20,
 		[], [], 30, "town_hall",
