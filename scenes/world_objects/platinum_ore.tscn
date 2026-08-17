@@ -6,15 +6,14 @@
 radius = 0.7
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rock"]
-albedo_color = Color(0.35, 0.3, 0.32, 1)
-roughness = 0.9
+albedo_color = Color(0.3, 0.28, 0.3, 1)
+roughness = 0.85
 
-[sub_resource type="SphereMesh" id="SphereMesh_rock"]
+[sub_resource type="BoxMesh" id="BoxMesh_base"]
 material = SubResource("StandardMaterial3D_rock")
-radius = 0.7
-height = 1.4
+size = Vector3(0.85, 0.4, 0.8)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nugget"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_facet"]
 albedo_color = Color(0.72, 0.8, 0.88, 1)
 metallic = 0.85
 roughness = 0.15
@@ -22,10 +21,9 @@ emission_enabled = true
 emission = Color(0.6, 0.75, 0.9, 1)
 emission_energy_multiplier = 0.4
 
-[sub_resource type="SphereMesh" id="SphereMesh_nugget"]
-material = SubResource("StandardMaterial3D_nugget")
-radius = 0.17
-height = 0.34
+[sub_resource type="BoxMesh" id="BoxMesh_facet"]
+material = SubResource("StandardMaterial3D_facet")
+size = Vector3(0.3, 0.3, 0.3)
 
 [node name="PlatinumOre" type="StaticBody3D"]
 collision_layer = 4
@@ -39,16 +37,24 @@ respawn_time = 70.0
 position = Vector3(0, 0.5, 0)
 shape = SubResource("SphereShape3D_1")
 
-[node name="Mesh" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.42, 0)
-scale = Vector3(1, 0.6, 0.85)
-mesh = SubResource("SphereMesh_rock")
+[node name="Base" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.2, 0)
+rotation_degrees = Vector3(0, 12, 0)
+mesh = SubResource("BoxMesh_base")
 
-[node name="NuggetA" type="MeshInstance3D" parent="."]
-position = Vector3(0.2, 0.44, 0.16)
-mesh = SubResource("SphereMesh_nugget")
+[node name="FacetA" type="MeshInstance3D" parent="."]
+position = Vector3(0.16, 0.46, 0.1)
+rotation_degrees = Vector3(25, 45, 15)
+mesh = SubResource("BoxMesh_facet")
 
-[node name="NuggetB" type="MeshInstance3D" parent="."]
-position = Vector3(-0.2, 0.38, -0.14)
+[node name="FacetB" type="MeshInstance3D" parent="."]
+position = Vector3(-0.2, 0.4, -0.12)
+rotation_degrees = Vector3(40, 20, -30)
 scale = Vector3(0.8, 0.8, 0.8)
-mesh = SubResource("SphereMesh_nugget")
+mesh = SubResource("BoxMesh_facet")
+
+[node name="FacetC" type="MeshInstance3D" parent="."]
+position = Vector3(0.02, 0.55, -0.06)
+rotation_degrees = Vector3(10, 60, 25)
+scale = Vector3(0.65, 0.65, 0.65)
+mesh = SubResource("BoxMesh_facet")

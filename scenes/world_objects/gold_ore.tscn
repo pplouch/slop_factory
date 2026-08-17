@@ -9,10 +9,11 @@ radius = 0.7
 albedo_color = Color(0.5, 0.48, 0.44, 1)
 roughness = 0.9
 
-[sub_resource type="SphereMesh" id="SphereMesh_rock"]
+[sub_resource type="CylinderMesh" id="CylinderMesh_outcrop"]
 material = SubResource("StandardMaterial3D_rock")
-radius = 0.7
-height = 1.4
+top_radius = 0.75
+bottom_radius = 0.85
+height = 0.5
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nugget"]
 albedo_color = Color(0.85, 0.68, 0.15, 1)
@@ -40,20 +41,20 @@ position = Vector3(0, 0.5, 0)
 shape = SubResource("SphereShape3D_1")
 
 [node name="Mesh" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.42, 0)
-scale = Vector3(1, 0.6, 0.85)
-mesh = SubResource("SphereMesh_rock")
+position = Vector3(0, 0.25, 0)
+scale = Vector3(1.1, 1, 1.05)
+mesh = SubResource("CylinderMesh_outcrop")
 
 [node name="NuggetA" type="MeshInstance3D" parent="."]
-position = Vector3(0.22, 0.42, 0.18)
+position = Vector3(0.22, 0.32, 0.18)
 mesh = SubResource("SphereMesh_nugget")
 
 [node name="NuggetB" type="MeshInstance3D" parent="."]
-position = Vector3(-0.18, 0.36, -0.12)
+position = Vector3(-0.18, 0.26, -0.12)
 scale = Vector3(0.75, 0.75, 0.75)
 mesh = SubResource("SphereMesh_nugget")
 
 [node name="NuggetC" type="MeshInstance3D" parent="."]
-position = Vector3(0.05, 0.5, -0.22)
+position = Vector3(0.05, 0.36, -0.22)
 scale = Vector3(0.6, 0.6, 0.6)
 mesh = SubResource("SphereMesh_nugget")
