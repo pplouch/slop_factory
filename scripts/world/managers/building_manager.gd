@@ -37,6 +37,14 @@ const GHOST_INVALID_COLOR := Color(1.0, 0.3, 0.3, 0.55)
 # bounded area instead, which only stays cheap if that area is local to
 # where the player is currently looking to place one.
 const WATER_EXTRACTOR_PREVIEW_RADIUS_CELLS := 5
+# Port-direction arrows shown next to the build-mode ghost (see
+# _refresh_port_indicators) -- colors deliberately reuse the same
+# input/output look already established per-instance (WaterTank's blue
+# InputMarker, Extractor's orange OutputMarker/OutputArrow) so the build-
+# mode preview and the finished building read as the same visual language.
+const PORT_ARROW_INPUT_COLOR := Color(0.3, 0.6, 1.0, 0.75)
+const PORT_ARROW_OUTPUT_COLOR := Color(1.0, 0.65, 0.2, 0.75)
+const PORT_ARROW_SIZE := Vector3(0.22, 0.12, 0.9)
 
 ## Grid cell (Vector2i) -> the belt/extractor/processor/building placed
 ## there. Lets each structure look up its neighbors (e.g. "is there a belt
@@ -58,6 +66,14 @@ var _build_ghost_cell := Vector2i.ZERO
 # selected build kind, so the player can see valid linking range at a glance
 # instead of guessing and getting an invalid-placement red ghost.
 var _extractor_range_indicators: Array = []
+
+# Translucent arrows shown at the ghost's port cells (see
+# _refresh_port_indicators) -- world-space nodes, deliberately NOT children
+# of _build_ghost: BuildingKinds ports are fixed world-relative offsets
+# (buildings never rotate), but _build_ghost itself still gets rotated by
+# _build_facing for kinds that DO rotate (belt/extractor/processor), and a
+# port arrow parented to it would incorrectly inherit that rotation.
+var _port_indicators: Array = []
 
 # Translucent tiles shown over legal (water) spots near the build-mode
 # cursor while "water_extractor" is the selected build kind -- see
@@ -105,6 +121,7 @@ func toggle_build_mode() -> void:
 		clear_ghost()
 		_clear_extractor_range_indicators()
 		_clear_water_extractor_range_indicators()
+		_clear_port_indicators()
 
 ## Signal handler for BuildPalette.kind_selected: switches which structure
 ## the next placement will be.
@@ -118,6 +135,7 @@ func on_build_kind_selected(kind_id: String) -> void:
 		_clear_extractor_range_indicators()
 	if kind_id != "water_extractor":
 		_clear_water_extractor_range_indicators()
+	_refresh_port_indicators()
 
 ## Spawns a translucent green disc over every resource node, sized to
 ## EXTRACTOR_LINK_RADIUS, so the player can see at a glance where an
@@ -187,6 +205,60 @@ func _clear_water_extractor_range_indicators() -> void:
 			indicator.queue_free()
 	_water_extractor_range_indicators.clear()
 
+## Rebuilds the port-direction arrows for whatever's currently selected,
+## anchored at the ghost's current cell: one per BuildingKinds input/output
+## port for a kind that has fixed ports (Town Hall/StorageDepot/WaterTank),
+## or a single output arrow (Extractor) / input+output pair (Processor) for
+## the two factory pieces whose single `facing` direction is genuinely
+## unambiguous. Belt is deliberately excluded -- its fair multi-side input
+## (see LinkableBuilding._resolve_fair_input) means "the" input side isn't a
+## single direction, and a single arrow would misrepresent that; Wall/Pipe
+## have no ports at all. Called on every ghost move (cheap: at most 2-4
+## small meshes) rather than only on kind change, so the arrows also track
+## the ghost sliding to a new cell.
+func _refresh_port_indicators() -> void:
+	_clear_port_indicators()
+	var anchor := grid_to_world(_build_ghost_cell)
+	var kind = BuildingKinds.get_kind(_build_selected_kind)
+	if kind and (not kind.input_ports.is_empty() or not kind.output_ports.is_empty()):
+		for offset in kind.input_ports:
+			_spawn_port_arrow(anchor, offset, false)
+		for offset in kind.output_ports:
+			_spawn_port_arrow(anchor, offset, true)
+	elif _build_selected_kind == "extractor":
+		_spawn_port_arrow(anchor, _build_facing, true)
+	elif _build_selected_kind == "processor":
+		_spawn_port_arrow(anchor, _build_facing, true)
+		_spawn_port_arrow(anchor, -_build_facing, false)
+
+## Spawns one translucent arrow at the cell boundary between `anchor` and
+## its neighbor in grid direction `offset`, pointing toward the neighbor
+## (an output -- material flows out this way) or back toward `anchor` (an
+## input -- material flows in this way).
+func _spawn_port_arrow(anchor: Vector3, offset: Vector2i, is_output: bool) -> void:
+	var arrow := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = PORT_ARROW_SIZE
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = PORT_ARROW_OUTPUT_COLOR if is_output else PORT_ARROW_INPUT_COLOR
+	mesh.material = mat
+	arrow.mesh = mesh
+	_world.add_child(arrow)
+	arrow.global_position = anchor + Vector3(offset.x, 0.3, offset.y) * (GRID_CELL_SIZE * 0.5)
+	var point_dir := Vector2(offset) if is_output else -Vector2(offset)
+	arrow.look_at(arrow.global_position + Vector3(point_dir.x, 0.0, point_dir.y), Vector3.UP)
+	_port_indicators.append(arrow)
+
+## Removes every port-direction arrow, e.g. when switching to a different
+## build kind, moving the ghost, or leaving build mode entirely.
+func _clear_port_indicators() -> void:
+	for indicator in _port_indicators:
+		if is_instance_valid(indicator):
+			indicator.queue_free()
+	_port_indicators.clear()
+
 ## Routes all input while build mode is active: mouse movement re-positions
 ## the ghost, left click places whatever's selected in the palette, right
 ## click demolishes whatever structure is under the ghost cell (regardless
@@ -221,6 +293,7 @@ func _update_ghost_position(screen_pos: Vector2) -> void:
 	_update_ghost_validity()
 	if _build_selected_kind == "water_extractor":
 		_refresh_water_extractor_indicators(_build_ghost_cell)
+	_refresh_port_indicators()
 
 ## Builds the flat colored tile + direction arrow used as the placement
 ## ghost, entirely in code (no scene needed for something this simple).
@@ -260,6 +333,7 @@ func _rotate_ghost() -> void:
 	_build_facing = Vector2i(-_build_facing.y, _build_facing.x)
 	if _build_ghost:
 		_build_ghost.look_at(_build_ghost.global_position + Vector3(_build_facing.x, 0.0, _build_facing.y), Vector3.UP)
+	_refresh_port_indicators()
 
 ## Recolors the ghost green/red to reflect whether the current cell and
 ## structure kind could actually be placed right now.
