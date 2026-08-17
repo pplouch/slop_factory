@@ -49,6 +49,7 @@ const MASK_RESOURCES := 4
 @onready var tech_tree_panel = $TechTreePanel
 @onready var chest_panel = $ChestPanel
 @onready var village_panel = $VillagePanel
+@onready var slot_machine_panel = $SlotMachinePanel
 @onready var _sun: DirectionalLight3D = $DirectionalLight3D
 
 # Half-size used for the minimap's world<->local mapping -- deliberately
@@ -162,6 +163,8 @@ func close_other_ui(opened: Node) -> void:
 		chest_panel.close_panel()
 	if village_panel != opened:
 		village_panel.close_panel()
+	if slot_machine_panel != opened:
+		slot_machine_panel.close_panel()
 	if tech_tree_panel != opened:
 		tech_tree_panel.close_panel()
 	if debug_menu != opened:

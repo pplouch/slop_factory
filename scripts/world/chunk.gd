@@ -51,6 +51,13 @@ const VILLAGE_CHANCE := 0.03
 const FRIENDLY_VILLAGE_SCENE: PackedScene = preload("res://scenes/world_objects/friendly_village.tscn")
 const ENEMY_VILLAGE_SCENE: PackedScene = preload("res://scenes/world_objects/enemy_village.tscn")
 
+## Chance this chunk gets a single SlotMachine (see feature backlog:
+## "wanky dandy" fun features/mini-games) -- between Chest and Village in
+## rarity, since it's a fun little distraction rather than either an
+## everyday pickup or a real landmark.
+const SLOT_MACHINE_CHANCE := 0.05
+const SLOT_MACHINE_SCENE: PackedScene = preload("res://scenes/world_objects/slot_machine.tscn")
+
 ## Rivers/lakes are placed procedurally (see Biomes.is_river_at/is_lake_at)
 ## rather than at a flat per-chunk chance -- a chunk only gets a harvestable
 ## water source if one of a few sampled points inside it actually lands on
@@ -86,6 +93,8 @@ func generate(coord: Vector2i, p_biome: Biomes.Biome) -> void:
 		_maybe_spawn_chest()
 	if randf() < VILLAGE_CHANCE:
 		_maybe_spawn_village()
+	if randf() < SLOT_MACHINE_CHANCE:
+		_maybe_spawn_slot_machine()
 
 ## Builds the ground mesh (height-displaced plane, biome-tinted procedural
 ## texture) and a matching flat collision box for raycasting -- the
@@ -260,6 +269,19 @@ func _maybe_spawn_village() -> void:
 		return
 	var scene: PackedScene = FRIENDLY_VILLAGE_SCENE if randf() < 0.5 else ENEMY_VILLAGE_SCENE
 	var inst: Node3D = scene.instantiate()
+	add_child(inst)
+	inst.position = local
+	inst.rotation.y = randf() * TAU
+
+## Spawns one SlotMachine at a random point in this chunk (see
+## SLOT_MACHINE_CHANCE) -- skipped entirely if the rolled spot lands on
+## water, same no-retry convention as _maybe_spawn_chest/_maybe_spawn_village.
+func _maybe_spawn_slot_machine() -> void:
+	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
+	var local := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+	if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
+		return
+	var inst: Node3D = SLOT_MACHINE_SCENE.instantiate()
 	add_child(inst)
 	inst.position = local
 	inst.rotation.y = randf() * TAU

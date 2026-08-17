@@ -31,9 +31,10 @@ func setup(world: Node3D) -> void:
 ## building info modal if a building was clicked, opens the resource info
 ## modal if a resource node was clicked, opens the chest-loot modal if a
 ## Chest was clicked, opens the trade modal if a FriendlyVillage was
-## clicked, attempts a raid if an EnemyVillage was clicked, or clears the
-## selection if empty ground was clicked (unless shift/additive is held, in
-## which case an empty click does nothing).
+## clicked, attempts a raid if an EnemyVillage was clicked, opens the spin
+## modal if a SlotMachine was clicked, or clears the selection if empty
+## ground was clicked (unless shift/additive is held, in which case an
+## empty click does nothing).
 func handle_click_select(pos: Vector2, additive: bool) -> void:
 	var hit: Dictionary = _world.raycast(pos, MASK_BLOBS)
 	if hit and hit.collider.is_in_group("blobs"):
@@ -66,6 +67,10 @@ func handle_click_select(pos: Vector2, additive: bool) -> void:
 			return
 		if resource_hit.collider.is_in_group("enemy_villages"):
 			resource_hit.collider.try_raid()
+			return
+		if resource_hit.collider.is_in_group("slot_machines"):
+			_world.slot_machine_panel.open_for(resource_hit.collider)
+			_world.close_other_ui(_world.slot_machine_panel)
 			return
 		if resource_hit.collider.is_in_group("resource_nodes"):
 			_world.resource_info_panel.open_for(resource_hit.collider)
