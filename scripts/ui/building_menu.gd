@@ -36,6 +36,7 @@ extends CanvasLayer
 @onready var global_upgrades_section: VBoxContainer = $Panel/Scroll/VBox/GlobalUpgradesSection
 @onready var upgrade_rows_container: VBoxContainer = $Panel/Scroll/VBox/GlobalUpgradesSection/UpgradeRows
 @onready var hire_section: VBoxContainer = $Panel/Scroll/VBox/HireSection
+@onready var hire_title: Label = $Panel/Scroll/VBox/HireSection/HireTitle
 @onready var hire_rows_container: VBoxContainer = $Panel/Scroll/VBox/HireSection/HireRows
 
 @onready var close_button: Button = $CloseButton
@@ -72,8 +73,16 @@ func _ready() -> void:
 ## than only on a GameManager signal, so this section alone is kept fresh
 ## continuously while the menu is open instead of via signal-driven _refresh.
 func _process(_delta: float) -> void:
-	if visible and _current_building and is_instance_valid(_current_building) and _current_building.has_method("get_info_text"):
+	if not visible:
+		return
+	if _current_building and is_instance_valid(_current_building) and _current_building.has_method("get_info_text"):
 		info_extra_label.text = _current_building.get_info_text()
+	# Population also changes for reasons no GameManager signal fires for
+	# (a blob dying in combat, a House finishing construction), so it's
+	# refreshed live the same way rather than only on resource/upgrade/
+	# unlock signals.
+	if hire_section.visible:
+		_refresh_hire_rows()
 
 ## Clicking the dimmed backdrop (i.e. outside the panel itself, since the
 ## panel sits on top of and consumes clicks before they reach here) closes
@@ -168,16 +177,27 @@ func _refresh() -> void:
 		_upgrade_buttons[stat].text = "Upgrade (%d wood)" % cost
 		_upgrade_buttons[stat].disabled = not GameManager.can_afford_upgrade(stat)
 
+	_refresh_hire_rows()
+
+	_fit_to_content()
+
+## Refreshes the Hire section's population readout and every row's button
+## text/affordability. Split out from _refresh() since population can
+## change for reasons no GameManager signal fires for (a blob dying in
+## combat, a House finishing construction) -- see _process, which calls
+## this every frame the section is visible, on top of the signal-driven
+## _refresh() calling it too.
+func _refresh_hire_rows() -> void:
+	hire_title.text = "Hire Blobs (Population: %d/%d)" % [GameManager.get_current_population(), GameManager.get_population_cap()]
+	var population_full: bool = not GameManager.can_hire_more()
 	for kind_id in BlobKinds.get_ordered_ids():
 		var unlocked: bool = GameManager.is_blob_kind_unlocked(kind_id)
 		_hire_rows[kind_id].visible = unlocked
 		if not unlocked:
 			continue
 		var kind = BlobKinds.get_kind(kind_id)
-		_hire_buttons[kind_id].text = "Hire (%d wood)" % kind.hire_cost
-		_hire_buttons[kind_id].disabled = not GameManager.can_afford_cost(kind.hire_cost)
-
-	_fit_to_content()
+		_hire_buttons[kind_id].text = "Population full" if population_full else "Hire (%d wood)" % kind.hire_cost
+		_hire_buttons[kind_id].disabled = population_full or not GameManager.can_afford_cost(kind.hire_cost)
 
 ## Recomputes the panel's size from its current content (rather than the
 ## fixed box the .tscn used to hardcode) and re-centers it, so a

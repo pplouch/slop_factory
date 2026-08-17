@@ -95,10 +95,46 @@ var unlocked_blob_kinds: Dictionary = {
 	"worker": true,
 }
 
+## Baseline population cap before any House is built -- comfortably above
+## SpawnManager.FOUNDER_BLOB_COUNT (3) so a new game can hire a couple of
+## blobs before needing to build a House at all.
+const BASE_POPULATION_CAP := 5
+## Extra population cap granted per *finished* House (see get_population_cap
+## -- a House still under construction doesn't count, same as every other
+## building's "non-functional until built" convention).
+const POPULATION_PER_HOUSE := 5
+
 ## Godot lifecycle hook: marks the moment the difficulty ramp starts
 ## counting from.
 func _ready() -> void:
 	_start_time_ms = Time.get_ticks_msec()
+
+## Current number of blobs alive -- computed on demand from the "blobs"
+## group rather than tracked as a separate counter, so it can never drift
+## out of sync with reality regardless of how a blob comes to exist or die
+## (hired, freely spawned, debug-spawned, killed in combat, ...).
+func get_current_population() -> int:
+	return get_tree().get_nodes_in_group("blobs").size()
+
+## Current population cap: a base allowance plus POPULATION_PER_HOUSE for
+## every finished House (see feature backlog: "Have a maximum population
+## stat. Building houses will increase this stat.").
+func get_population_cap() -> int:
+	var house_count := 0
+	for building in get_tree().get_nodes_in_group("buildings"):
+		if not is_instance_valid(building) or building.get("kind_id") != "house":
+			continue
+		if "is_under_construction" in building and building.is_under_construction:
+			continue
+		house_count += 1
+	return BASE_POPULATION_CAP + house_count * POPULATION_PER_HOUSE
+
+## Whether one more blob could be hired/spawned right now without exceeding
+## the population cap. Checked by both Building.hire_blob (paid) and its
+## free auto-spawn timer -- a cap that only blocked paid hires would be
+## trivially bypassed by passive growth.
+func can_hire_more() -> bool:
+	return get_current_population() < get_population_cap()
 
 ## Multiplier Enemy should apply to its threat stats (health, attack power)
 ## at spawn time, ramping linearly from DIFFICULTY_START_MULTIPLIER up to

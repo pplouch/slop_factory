@@ -85,9 +85,13 @@ func try_upgrade() -> bool:
 ## random offset from the spawn point (so it doesn't land exactly on top of
 ## a blob that hasn't moved away yet), with the spawn-confirmation ring
 ## shown. Level 3's perk swaps the always-"worker" default for a random
-## kind, a small qualitative bonus rather than another numeric tweak.
+## kind, a small qualitative bonus rather than another numeric tweak. A
+## population cap already at its limit silently skips this tick's free
+## spawn rather than erroring -- the timer just keeps running and tries
+## again next interval (see feature backlog: a cap that only blocked paid
+## hires would be trivially bypassed by passive growth).
 func _on_spawn_timer_timeout() -> void:
-	if is_under_construction:
+	if is_under_construction or not GameManager.can_hire_more():
 		return
 	var offset := Vector3(randf_range(-0.6, 0.6), 0.0, randf_range(-0.6, 0.6))
 	var kind_to_spawn := AUTO_SPAWN_KIND
@@ -98,9 +102,12 @@ func _on_spawn_timer_timeout() -> void:
 ## Attempts to instantly spawn a blob of `blob_kind_id`, paid for in wood at
 ## that kind's BlobKinds.hire_cost (discounted 10% once this building has
 ## reached upgrade level 2). Returns whether the purchase went through;
-## BuildingMenu uses this to drive its Hire section.
+## BuildingMenu uses this to drive its Hire section. Also blocked once the
+## population cap is reached (see GameManager.can_hire_more) -- checked
+## before spending anything, so a capped-out player never loses wood for
+## a hire that can't actually happen.
 func hire_blob(blob_kind_id: String) -> bool:
-	if is_under_construction:
+	if is_under_construction or not GameManager.can_hire_more():
 		return false
 	var kind = BlobKinds.get_kind(blob_kind_id)
 	var cost: int = kind.hire_cost
