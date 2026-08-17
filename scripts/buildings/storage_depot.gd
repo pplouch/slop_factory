@@ -7,6 +7,12 @@ extends BuildableStructure
 ## input/output Extractor and Processor -- it doesn't consume or transform
 ## anything, just buffers.
 ##
+## Also keeps a running lifetime tally of every resource type it's ever
+## received and how much (see _discovered/get_info_text) -- unlike the
+## short-lived `_buffer` (items leave again as soon as an output port is
+## free), this only ever grows, giving the player a shipment ledger for
+## whatever's been routed through this particular depot.
+##
 ## Unlike belts/Extractor/Processor, this building doesn't rotate to a
 ## placement-time `facing` -- its ports are fixed world directions matching
 ## BuildingKinds' registered offsets, and its visual markers are placed to
@@ -30,6 +36,13 @@ const OUTPUT_PORTS := [Vector2i(0, 1), Vector2i(1, 0)]
 ## Items waiting to be pushed out through whichever output port frees up
 ## first, oldest first.
 var _buffer: Array = []
+
+## resource_type -> lifetime total ever received (see try_receive_input) --
+## grows forever, unlike _buffer, so BuildingMenu's info section can show
+## "every resource type discovered so far and its amount" for this depot.
+## Insertion order (a plain Dictionary already preserves this in GDScript)
+## doubles as "discovery order" for get_info_text's listing.
+var _discovered: Dictionary = {}
 
 @onready var _body_mesh: MeshInstance3D = $Body
 @onready var _body_base_position: Vector3 = _body_mesh.position
@@ -89,13 +102,26 @@ func _process(_delta: float) -> void:
 			return
 
 ## Accepts `item` into the buffer if there's room, snapping it to this
-## building's center to visually show it's "inside" while queued.
-## `_from_direction` is accepted for interface consistency with
-## BeltSegment/Processor/Building but unused -- both input sides feed the
-## same shared buffer.
+## building's center to visually show it's "inside" while queued, and
+## records it in the lifetime discovery tally (see _discovered) regardless
+## of how long it ends up sitting in the buffer. `_from_direction` is
+## accepted for interface consistency with BeltSegment/Processor/Building
+## but unused -- both input sides feed the same shared buffer.
 func try_receive_input(item: Node3D, _from_direction: Vector2i = Vector2i.ZERO) -> bool:
 	if is_under_construction or _buffer.size() >= _max_buffer():
 		return false
+	_discovered[item.resource_type] = _discovered.get(item.resource_type, 0) + item.amount
 	item.global_position = global_position + Vector3(0.0, 0.4, 0.0)
 	_buffer.append(item)
 	return true
+
+## Duck-typed by BuildingMenu (has_method("get_info_text")) to show a line
+## of live status beyond the generic name/durability/ports fields.
+func get_info_text() -> String:
+	var text := "Buffered: %d/%d" % [_buffer.size(), _max_buffer()]
+	if _discovered.is_empty():
+		return text + "\nDiscovered: nothing yet"
+	text += "\nDiscovered:"
+	for resource_type in _discovered.keys():
+		text += "\n  %s: %d" % [resource_type.capitalize(), _discovered[resource_type]]
+	return text
