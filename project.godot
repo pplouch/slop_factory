@@ -15,12 +15,13 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 [application]
 
 config/name="Rogue idle slop factory survivor rpg ultimate"
-run/main_scene="uid://kw8ovq1qk74x"
+run/main_scene="res://scenes/ui/main_menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 
 [autoload]
 
+MetaProgression="*res://scripts/autoload/meta_progression.gd"
 GameManager="*res://scripts/autoload/game_manager.gd"
 Effects="*res://scripts/autoload/effects.gd"
 BlobKinds="*res://scripts/autoload/blob_kinds.gd"

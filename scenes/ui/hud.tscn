@@ -133,6 +133,16 @@ layout_mode = 2
 mouse_filter = 2
 text = "Selected: 0"
 
+[node name="EndRunButton" type="Button" parent="."]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -132.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 48.0
+theme = ExtResource("3")
+text = "End Run"
+
 [node name="SelectionBox" type="ColorRect" parent="."]
 mouse_filter = 2
 script = ExtResource("2")

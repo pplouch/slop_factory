@@ -67,6 +67,17 @@ const MINIMAP_HALF_SIZE := 90.0
 # MINIMAP_HALF_SIZE, 90, which read as "fog only covers a small area").
 const FOG_HALF_SIZE := 2000.0
 
+const MAIN_MENU_SCENE_PATH := "res://scenes/ui/main_menu.tscn"
+## How many MetaProgression prestige points a run banks per in-game day
+## reached / House actually built (see feature backlog: main menu +
+## meta-progression, and MetaProgression's own header for why these two
+## measures specifically -- day reached and Houses built are the two
+## legible, always-available "how far did this run get" signals, since the
+## game has no win/loss condition of its own to hook a "run ended" moment
+## off of otherwise).
+const PRESTIGE_PER_DAY := 10
+const PRESTIGE_PER_HOUSE := 5
+
 var _chunk_manager := ChunkManager.new()
 var _pathing_manager := PathingManager.new()
 var _building_manager := BuildingManager.new()
@@ -130,6 +141,7 @@ func _ready() -> void:
 
 	minimap.camera_move_requested.connect(_move_camera_to)
 	tech_tree_panel.opened.connect(func(): close_other_ui(tech_tree_panel))
+	hud.end_run_requested.connect(_on_end_run_requested)
 
 ## Closes every other primary UI popup/panel and deselects any currently
 ## selected blobs whenever one of them opens, so BuildingMenu/
@@ -164,6 +176,14 @@ func close_other_ui(opened: Node) -> void:
 func _move_camera_to(world_pos: Vector3) -> void:
 	camera_rig.position.x = world_pos.x
 	camera_rig.position.z = world_pos.z
+
+## Signal handler for HUD.end_run_requested: banks this run's earned
+## prestige points (see PRESTIGE_PER_DAY/PRESTIGE_PER_HOUSE above) and
+## returns to MainMenu, ending the run.
+func _on_end_run_requested() -> void:
+	var points := _day_night_manager.current_day() * PRESTIGE_PER_DAY + GameManager.get_house_count() * PRESTIGE_PER_HOUSE
+	MetaProgression.earn_prestige(points)
+	get_tree().change_scene_to_file(MAIN_MENU_SCENE_PATH)
 
 ## Godot per-frame hook: delegates to ChunkManager, which internally only
 ## re-checks chunk coverage every CHUNK_CHECK_INTERVAL, not every frame; to

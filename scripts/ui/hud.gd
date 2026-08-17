@@ -13,9 +13,20 @@ extends CanvasLayer
 @onready var population_label: Label = $Panel/HBox/PopulationLabel
 @onready var day_label: Label = $Panel/HBox/DayLabel
 @onready var selected_label: Label = $Panel/HBox/SelectedLabel
+@onready var end_run_button: Button = $EndRunButton
+
+## Fired when the player confirms ending the current run (see
+## end_run_button's two-step confirm below) -- World listens, banks
+## MetaProgression prestige points for how far this run got, and returns to
+## MainMenu (see feature backlog: main menu + meta-progression).
+signal end_run_requested
 
 var _last_population_text := ""
 var _last_day_shown := 0
+
+const END_RUN_CONFIRM_WINDOW := 4.0
+var _end_run_armed := false
+var _end_run_arm_elapsed := 0.0
 
 
 ## Godot lifecycle hook: subscribes to resource changes and seeds the
@@ -27,17 +38,23 @@ func _ready() -> void:
 	_on_resource_changed("stone", GameManager.get_resource("stone"))
 	_on_resource_changed("planks", GameManager.get_resource("planks"))
 	_on_resource_changed("knowledge", GameManager.get_resource("knowledge"))
+	end_run_button.pressed.connect(_on_end_run_pressed)
 
 ## Godot per-frame hook: keeps the Population readout current (see class
 ## doc for why this one stat is polled instead of signal-driven). Only
 ## touches the label (and its punch cue) when the text actually changed,
 ## so this doesn't spam a pulse every single frame while population is stable.
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var text := "Population: %d/%d" % [GameManager.get_current_population(), GameManager.get_population_cap()]
 	if text != _last_population_text:
 		_last_population_text = text
 		population_label.text = text
 		_punch(population_label)
+
+	if _end_run_armed:
+		_end_run_arm_elapsed += delta
+		if _end_run_arm_elapsed >= END_RUN_CONFIRM_WINDOW:
+			_disarm_end_run()
 
 ## Signal handler for GameManager.resource_changed: updates the matching
 ## label's text and gives it a little "punch" pulse so the player notices
@@ -74,6 +91,25 @@ func set_day_info(day: int, is_night: bool) -> void:
 		_last_day_shown = day
 		_punch(day_label)
 	day_label.text = text
+
+## Button handler for End Run -- a two-step confirm (see OptionsPanel's own
+## Reset button for the identical shape) since this ends the current run
+## and returns to MainMenu, rather than an in-place action a misclick could
+## just undo. The first press arms it and relabels the button as a
+## confirmation prompt; a second press within END_RUN_CONFIRM_WINDOW
+## actually fires end_run_requested for World to handle (see feature
+## backlog: main menu + meta-progression).
+func _on_end_run_pressed() -> void:
+	if not _end_run_armed:
+		_end_run_armed = true
+		_end_run_arm_elapsed = 0.0
+		end_run_button.text = "Are you sure? Click again"
+		return
+	end_run_requested.emit()
+
+func _disarm_end_run() -> void:
+	_end_run_armed = false
+	end_run_button.text = "End Run"
 
 ## Briefly scales `label` up then eases it back to normal size, used as a
 ## lightweight "this value just changed" cue.

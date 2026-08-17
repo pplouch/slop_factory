@@ -55,7 +55,11 @@ const DIFFICULTY_START_MULTIPLIER := 0.35
 var _start_time_ms: int = 0
 
 ## Starts pre-stocked for debug convenience (so upgrades/hires/build mode
-## can be exercised immediately without a harvesting grind).
+## can be exercised immediately without a harvesting grind). The wood
+## figure gets MetaProgression's starting_wood_bonus added in _ready() --
+## kept as a plain literal here rather than computed inline so a script
+## reading this dict's shape at parse time (e.g. a debug hook) still sees a
+## plain baseline number.
 var resources: Dictionary = {
 	"wood": 100,
 	"stone": 100,
@@ -108,9 +112,14 @@ const BASE_POPULATION_CAP := 5
 const POPULATION_PER_HOUSE := 5
 
 ## Godot lifecycle hook: marks the moment the difficulty ramp starts
-## counting from.
+## counting from, and grants this run's starting-wood bonus from
+## MetaProgression (see feature backlog: main menu + meta-progression) --
+## applied once here rather than baked into the `resources` dict literal
+## above, so a purchased upgrade level takes effect on every future run
+## without needing to touch this file again.
 func _ready() -> void:
 	_start_time_ms = Time.get_ticks_msec()
+	resources["wood"] += MetaProgression.starting_wood_bonus()
 
 ## Current number of blobs alive -- computed on demand from the "blobs"
 ## group rather than tracked as a separate counter, so it can never drift
@@ -119,10 +128,21 @@ func _ready() -> void:
 func get_current_population() -> int:
 	return get_tree().get_nodes_in_group("blobs").size()
 
-## Current population cap: a base allowance plus POPULATION_PER_HOUSE for
-## every finished House (see feature backlog: "Have a maximum population
-## stat. Building houses will increase this stat.").
+## Current population cap: a base allowance (plus MetaProgression's own
+## permanent population bonus, see feature backlog: main menu +
+## meta-progression) plus POPULATION_PER_HOUSE for every finished House
+## (see feature backlog: "Have a maximum population stat. Building houses
+## will increase this stat.").
 func get_population_cap() -> int:
+	var house_count := get_house_count()
+	return BASE_POPULATION_CAP + MetaProgression.population_bonus() + house_count * POPULATION_PER_HOUSE
+
+## Number of finished (not under-construction) Houses currently standing --
+## split out of get_population_cap so World's End Run flow (see feature
+## backlog: main menu + meta-progression) can factor "how many Houses did
+## this run build" into the prestige points it banks without duplicating
+## this same scan.
+func get_house_count() -> int:
 	var house_count := 0
 	for building in get_tree().get_nodes_in_group("buildings"):
 		if not is_instance_valid(building) or building.get("kind_id") != "house":
@@ -130,7 +150,7 @@ func get_population_cap() -> int:
 		if "is_under_construction" in building and building.is_under_construction:
 			continue
 		house_count += 1
-	return BASE_POPULATION_CAP + house_count * POPULATION_PER_HOUSE
+	return house_count
 
 ## Whether one more blob could be hired/spawned right now without exceeding
 ## the population cap. Checked by both Building.hire_blob (paid) and its
@@ -224,9 +244,13 @@ func get_speed_multiplier() -> float:
 	return 1.0 + get_upgrade_level("speed") * SPEED_BONUS_PER_LEVEL
 
 ## Multiplier blobs should apply to their base harvest yield (amount per
-## tick), given the current "strength" upgrade level.
+## tick), given the current "strength" upgrade level and MetaProgression's
+## own permanent harvest bonus (see feature backlog: main menu +
+## meta-progression) -- the two stack multiplicatively, so a
+## meta-upgrade's benefit compounds with in-run upgrades rather than being
+## overridden by them.
 func get_strength_multiplier() -> float:
-	return 1.0 + get_upgrade_level("strength") * STRENGTH_BONUS_PER_LEVEL
+	return (1.0 + get_upgrade_level("strength") * STRENGTH_BONUS_PER_LEVEL) * MetaProgression.harvest_bonus_multiplier()
 
 ## Multiplier blobs should apply to their harvest tick *rate* (higher means
 ## shorter time between ticks), given the current "efficiency" upgrade level.
