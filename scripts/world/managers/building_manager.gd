@@ -45,6 +45,12 @@ const WATER_EXTRACTOR_PREVIEW_RADIUS_CELLS := 5
 const PORT_ARROW_INPUT_COLOR := Color(0.3, 0.6, 1.0, 0.75)
 const PORT_ARROW_OUTPUT_COLOR := Color(1.0, 0.65, 0.2, 0.75)
 const PORT_ARROW_SIZE := Vector3(0.22, 0.12, 0.9)
+## Arrowhead cone appended to each port arrow's tip (see _add_arrow_cone) --
+## a plain bar alone didn't read which end was "the point" clearly enough
+## (see feature backlog: "the blue/orange lines aren't explicit enough
+## about direction, add a cone at the end").
+const PORT_ARROW_CONE_HEIGHT := 0.3
+const PORT_ARROW_CONE_RADIUS := 0.16
 
 ## Grid cell (Vector2i) -> the belt/extractor/processor/building placed
 ## there. Lets each structure look up its neighbors (e.g. "is there a belt
@@ -62,6 +68,13 @@ var _build_facing := Vector2i(1, 0)
 var _build_ghost: Node3D = null
 var _build_ghost_material: StandardMaterial3D = null
 var _build_ghost_cell := Vector2i.ZERO
+## Which kind _build_ghost was last built for -- see _ensure_ghost_for_kind.
+var _build_ghost_kind := ""
+## Whether _build_ghost's real scene declared a `facing` field (checked
+## once at creation time, before its script gets stripped -- see
+## _create_ghost) -- only kinds that actually rotate when placed
+## (Extractor/Processor/Foundry/Belt) should have their ghost rotate too.
+var _build_ghost_rotates := false
 
 # Kinds where holding the mouse button and dragging places a whole line at
 # once instead of one click per cell -- LinkableBuilding entries only (see
@@ -268,22 +281,48 @@ func _refresh_port_indicators() -> void:
 ## Spawns one translucent arrow at the cell boundary between `anchor` and
 ## its neighbor in grid direction `offset`, pointing toward the neighbor
 ## (an output -- material flows out this way) or back toward `anchor` (an
-## input -- material flows in this way).
+## input -- material flows in this way). Topped with a small cone
+## arrowhead at its tip (see _add_arrow_cone) so the direction reads
+## unambiguously rather than as a plain undifferentiated bar.
 func _spawn_port_arrow(anchor: Vector3, offset: Vector2i, is_output: bool) -> void:
 	var arrow := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = PORT_ARROW_SIZE
+	var color := PORT_ARROW_OUTPUT_COLOR if is_output else PORT_ARROW_INPUT_COLOR
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = PORT_ARROW_OUTPUT_COLOR if is_output else PORT_ARROW_INPUT_COLOR
+	mat.albedo_color = color
 	mesh.material = mat
 	arrow.mesh = mesh
 	_world.add_child(arrow)
 	arrow.global_position = anchor + Vector3(offset.x, 0.3, offset.y) * (GRID_CELL_SIZE * 0.5)
 	var point_dir := Vector2(offset) if is_output else -Vector2(offset)
 	arrow.look_at(arrow.global_position + Vector3(point_dir.x, 0.0, point_dir.y), Vector3.UP)
+	_add_arrow_cone(arrow, color)
 	_port_indicators.append(arrow)
+
+## Adds a cone "arrowhead" as a child of `arrow`, at the tip of its bar --
+## a child so it inherits the bar's own look_at orientation for free.
+## CylinderMesh's axis runs along local Y by default (apex at +Y once
+## top_radius is 0), rotated -90 degrees around X so the apex instead
+## points along the bar's local -Z, the same direction look_at already
+## pointed the whole arrow (away from the anchor cell).
+func _add_arrow_cone(arrow: MeshInstance3D, color: Color) -> void:
+	var cone := MeshInstance3D.new()
+	var cone_mesh := CylinderMesh.new()
+	cone_mesh.top_radius = 0.0
+	cone_mesh.bottom_radius = PORT_ARROW_CONE_RADIUS
+	cone_mesh.height = PORT_ARROW_CONE_HEIGHT
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = color
+	cone_mesh.material = mat
+	cone.mesh = cone_mesh
+	cone.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
+	cone.position = Vector3(0.0, 0.0, -(PORT_ARROW_SIZE.z * 0.5 + PORT_ARROW_CONE_HEIGHT * 0.5))
+	arrow.add_child(cone)
 
 ## Removes every port-direction arrow, e.g. when switching to a different
 ## build kind, moving the ghost, or leaving build mode entirely.
@@ -336,8 +375,15 @@ func handle_build_input(event: InputEvent) -> void:
 ## direction just traveled from the last-placed cell, so a dragged line
 ## curves to follow the mouse path instead of every segment keeping
 ## whatever facing was picked before the drag started, before attempting
-## the actual placement. Silently does nothing at cells that aren't valid
-## (occupied, unaffordable, ...), same as a single click would.
+## the actual placement. Also retargets the *previous* segment to face this
+## same new direction when the path just turned (see _retarget_previous_belt)
+## -- without that, a belt placed right before a turn keeps outputting
+## toward its old straight-line direction instead of into the corner,
+## stranding items there instead of letting them flow around the bend (see
+## feature backlog: "when drag creating belts... the previous belt should
+## be rotated so the output goes into the input of the next belt"). Silently
+## does nothing at cells that aren't valid (occupied, unaffordable, ...),
+## same as a single click would.
 func _try_drag_place() -> void:
 	if _build_ghost_cell == _drag_last_cell:
 		return
@@ -347,66 +393,103 @@ func _try_drag_place() -> void:
 			_build_facing = Vector2i(signi(delta.x), 0)
 		elif delta.y != 0:
 			_build_facing = Vector2i(0, signi(delta.y))
+		_retarget_previous_belt(_drag_last_cell, _build_facing)
 		if _build_ghost:
 			_build_ghost.look_at(_build_ghost.global_position + Vector3(_build_facing.x, 0.0, _build_facing.y), Vector3.UP)
 		_refresh_port_indicators()
 	try_place_structure()
 	_drag_last_cell = _build_ghost_cell
 
+## Re-orients the belt segment already sitting at `cell` (the previous
+## drag-placed segment) to face `new_direction`, so a turn in the drag path
+## actually bends that corner instead of leaving the pre-turn segment
+## pointing straight past it. A no-op if `cell` holds nothing, holds
+## something without a `facing` field (anything but a factory piece), or
+## is already facing `new_direction` (a straight run, no turn happened).
+func _retarget_previous_belt(cell: Vector2i, new_direction: Vector2i) -> void:
+	var previous: Node3D = get_structure_at(cell)
+	if previous == null or not ("facing" in previous) or previous.facing == new_direction:
+		return
+	previous.facing = new_direction
+	previous.look_at(previous.global_position + Vector3(new_direction.x, 0.0, new_direction.y), Vector3.UP)
+	if previous.has_method("refresh_connections"):
+		previous.refresh_connections()
+	refresh_neighbor_visuals(cell)
+
 ## Moves the ghost preview to the grid cell under the mouse (raycast against
-## the ground plane), creating it on first use, and refreshes whether that
-## cell is currently a valid placement.
+## the ground plane), (re)creating it on first use or on a kind change, and
+## refreshes whether that cell is currently a valid placement.
 func _update_ghost_position(screen_pos: Vector2) -> void:
 	var hit: Dictionary = _world.raycast(screen_pos, MASK_GROUND)
 	if not hit:
 		return
 	_build_ghost_cell = world_to_grid(hit.position)
-	if not _build_ghost:
-		_build_ghost = _create_ghost()
+	_ensure_ghost_for_kind(_build_selected_kind)
 	_build_ghost.global_position = grid_to_world(_build_ghost_cell)
-	_build_ghost.look_at(_build_ghost.global_position + Vector3(_build_facing.x, 0.0, _build_facing.y), Vector3.UP)
+	if _build_ghost_rotates:
+		_build_ghost.look_at(_build_ghost.global_position + Vector3(_build_facing.x, 0.0, _build_facing.y), Vector3.UP)
 	_update_ghost_validity()
 	if _build_selected_kind == "water_extractor":
 		_refresh_water_extractor_indicators(_build_ghost_cell)
 	_refresh_port_indicators()
 
-## Builds the flat colored tile + direction arrow used as the placement
-## ghost, entirely in code (no scene needed for something this simple).
-## Color is updated per-frame by _update_ghost_validity; geometry never
-## changes, so it's shared across all structure kinds.
-func _create_ghost() -> Node3D:
-	var ghost := Node3D.new()
-	_world.add_child(ghost)
+## Rebuilds _build_ghost from scratch whenever the selected kind changes
+## (a no-op otherwise) -- see _create_ghost.
+func _ensure_ghost_for_kind(kind_id: String) -> void:
+	if _build_ghost and _build_ghost_kind == kind_id:
+		return
+	clear_ghost()
+	_build_ghost = _create_ghost(kind_id)
+	_build_ghost_kind = kind_id
 
-	var tile := MeshInstance3D.new()
-	var tile_mesh := BoxMesh.new()
-	tile_mesh.size = Vector3(GRID_CELL_SIZE * 0.9, 0.2, GRID_CELL_SIZE * 0.9)
+## Instantiates `kind_id`'s own real scene for the build-mode ghost preview
+## instead of the old generic flat tile + arrow shared by every kind, so
+## the player sees exactly what they're about to place, tinted translucent
+## green/red for valid/invalid (see feature backlog: "the build-mode ghost
+## should preview the actual finished building transparently"). The
+## instance's script is stripped *before* it ever enters the tree, so its
+## _ready()/_process() (timers, group registration, resource harvesting,
+## the construction-rise-from-a-stub animation, etc.) never run on what's
+## only a preview -- a side benefit is the ghost shows the structure at its
+## true full-size finished geometry rather than a freshly-placed construction
+## stub. Every MeshInstance3D and CollisionObject3D found in its subtree
+## (see _prep_ghost_node) gets the same shared translucent material_override/
+## disabled collision, so the whole preview tints as one unit and is never
+## itself clickable or raycast-hittable, regardless of how many separate
+## meshes/bodies the real structure is built from (e.g. Belt's own
+## ClickArea).
+func _create_ghost(kind_id: String) -> Node3D:
+	var instance: Node3D = instantiate_structure(kind_id)
+	_build_ghost_rotates = "facing" in instance
+	instance.set_script(null)
 	_build_ghost_material = StandardMaterial3D.new()
 	_build_ghost_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_build_ghost_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_build_ghost_material.albedo_color = GHOST_VALID_COLOR
-	tile_mesh.material = _build_ghost_material
-	tile.mesh = tile_mesh
-	tile.position = Vector3(0.0, 0.1, 0.0)
-	ghost.add_child(tile)
+	_prep_ghost_node(instance, _build_ghost_material)
+	_world.add_child(instance)
+	return instance
 
-	var arrow := MeshInstance3D.new()
-	var arrow_mesh := BoxMesh.new()
-	arrow_mesh.size = Vector3(0.25, 0.15, 1.2)
-	var arrow_mat := StandardMaterial3D.new()
-	arrow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	arrow_mat.albedo_color = Color(1.0, 1.0, 1.0, 0.85)
-	arrow_mesh.material = arrow_mat
-	arrow.mesh = arrow_mesh
-	arrow.position = Vector3(0.0, 0.25, -0.3)
-	ghost.add_child(arrow)
-
-	return ghost
+## Recursively applies `mat` as every MeshInstance3D's material_override and
+## zeroes every CollisionObject3D's collision_layer/mask, throughout
+## `node`'s whole subtree (see _create_ghost).
+func _prep_ghost_node(node: Node, mat: Material) -> void:
+	if node is MeshInstance3D:
+		node.material_override = mat
+	if node is CollisionObject3D:
+		node.collision_layer = 0
+		node.collision_mask = 0
+	for child in node.get_children():
+		_prep_ghost_node(child, mat)
 
 ## Rotates the ghost's facing 90 degrees clockwise (grid-relative, not a free
-## rotation) and re-orients the preview to match.
+## rotation) and re-orients the preview to match -- only for a kind whose
+## real scene actually declares `facing` (see _build_ghost_rotates); a fixed
+## building's preview shouldn't spin just because 'R' was pressed when it
+## would never rotate once actually placed.
 func _rotate_ghost() -> void:
 	_build_facing = Vector2i(-_build_facing.y, _build_facing.x)
-	if _build_ghost:
+	if _build_ghost and _build_ghost_rotates:
 		_build_ghost.look_at(_build_ghost.global_position + Vector3(_build_facing.x, 0.0, _build_facing.y), Vector3.UP)
 	_refresh_port_indicators()
 
@@ -622,9 +705,12 @@ func instantiate_structure(kind: String) -> Node3D:
 		return WATER_EXTRACTOR_SCENE.instantiate()
 	return PROCESSOR_SCENE.instantiate()
 
-## Removes the ghost preview, e.g. when exiting build mode.
+## Removes the ghost preview, e.g. when exiting build mode or switching kind
+## (see _ensure_ghost_for_kind).
 func clear_ghost() -> void:
 	if _build_ghost:
 		_build_ghost.queue_free()
 		_build_ghost = null
 		_build_ghost_material = null
+		_build_ghost_kind = ""
+		_build_ghost_rotates = false
