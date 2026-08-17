@@ -26,13 +26,20 @@ const MAX_HARVEST_SPREAD_RADIUS := 16.0
 const ITEM_REQUIRED_FOR_RESOURCE := {"food": "weapon", "water": "bucket"}
 const EQUIP_COST := 10
 
-# How much slack (see Blob.move_tolerance) a shared move/patrol point should
-# give every blob in the current selection: solo orders get none (exact
-# point, unchanged behavior), and it grows with the group size, capped, so a
-# big squad doesn't leave every blob but one stuck circling the one spot
-# someone else already reached.
+# How much slack (see Blob.move_tolerance) a shared patrol point should give
+# every blob in the current selection: solo orders get none (exact point,
+# unchanged behavior), and it grows with the group size, capped, so a big
+# squad doesn't leave every blob but one stuck circling the one spot someone
+# else already reached. A plain multi-blob move order no longer needs this
+# -- see _issue_formation_move, which gives every blob its own distinct spot
+# instead of a single shared point.
 const MOVE_TOLERANCE_PER_EXTRA_BLOB := 0.3
 const MAX_MOVE_TOLERANCE := 2.5
+
+# Spacing between adjacent grid-formation slots (see _formation_targets) --
+# wide enough to clear a blob's own visual/collision footprint without
+# touching its neighbor.
+const FORMATION_SPACING := 1.4
 
 var _world: Node3D
 var _selection: SelectionManager
@@ -102,7 +109,10 @@ func order_equip(item: String) -> void:
 ## Handles a right-click: does nothing if no blobs are selected, otherwise
 ## issues a harvest order (if a resource node was clicked) or a plain move
 ## order (if empty ground was clicked) to the whole selection, and spawns a
-## ring marker at the target to confirm the order was accepted.
+## ring marker at the target to confirm the order was accepted. A multi-blob
+## move order arranges the squad into a grid formation (see
+## _issue_formation_move) rather than sending everyone to the exact same
+## point; a solo blob just walks straight there.
 func handle_right_click(pos: Vector2) -> void:
 	# A selected blob may have died (enemy combat) since it was selected;
 	# drop any stale references before issuing commands to the selection.
@@ -130,14 +140,72 @@ func handle_right_click(pos: Vector2) -> void:
 	elif hit.collider.is_in_group("resource_nodes"):
 		_issue_harvest_orders(hit.collider)
 		Effects.spawn_command_marker(_world, hit.collider.global_position + Vector3(0.0, 0.05, 0.0), COLOR_HARVEST)
+	elif _selection.selected_blobs.size() > 1:
+		_issue_formation_move(hit.position)
+		Effects.spawn_command_marker(_world, hit.position + Vector3(0.0, 0.05, 0.0), COLOR_MOVE)
 	else:
-		var move_tolerance := _group_move_tolerance()
-		for blob in _selection.selected_blobs:
-			blob.command_move(hit.position, move_tolerance)
+		_selection.selected_blobs[0].command_move(hit.position)
 		Effects.spawn_command_marker(_world, hit.position + Vector3(0.0, 0.05, 0.0), COLOR_MOVE)
 
+## Only used by patrol orders now -- a plain multi-blob move order arranges
+## a grid formation instead (see _issue_formation_move), which no longer
+## needs this "shared point, growing slack" workaround since every blob
+## gets its own distinct destination.
 func _group_move_tolerance() -> float:
 	return min(MAX_MOVE_TOLERANCE, max(0, _selection.selected_blobs.size() - 1) * MOVE_TOLERANCE_PER_EXTRA_BLOB)
+
+## Sends every currently-selected blob to its own slot in a grid formation
+## centered on `center`, like a war battalion falling into rank, instead of
+## every blob converging on the exact same point (see feature backlog:
+## "when moving a group of units, they should arrange in an organized grid").
+## Each blob gets zero move_tolerance -- its own slot is already a distinct
+## point nothing else is walking toward, so the old "shared point, growing
+## slack" workaround _group_move_tolerance provided isn't needed here.
+func _issue_formation_move(center: Vector3) -> void:
+	var blobs := _selection.selected_blobs
+	var targets := _formation_targets(blobs, center)
+	for i in blobs.size():
+		blobs[i].command_move(targets[i])
+
+## Computes one destination per blob in `blobs`, laid out in a roughly
+## square grid (axis-aligned to world X/Z -- not rotated to face the
+## direction of travel, which would need a heading and reads fine as-is
+## from this project's steep top-down camera) centered on `center`.
+## Assignment is greedy-globally-nearest (repeatedly pairing off whichever
+## remaining blob/slot combination is closest) rather than a fixed slot
+## order, so a squad marching to a new point tends to slot in without
+## needlessly crossing paths to reach an arbitrarily-assigned spot.
+func _formation_targets(blobs: Array, center: Vector3) -> Array:
+	var count := blobs.size()
+	var cols := int(ceil(sqrt(count)))
+	var rows := int(ceil(float(count) / cols))
+	var slots: Array = []
+	for row in range(rows):
+		for col in range(cols):
+			if slots.size() >= count:
+				break
+			var offset_x: float = (col - (cols - 1) / 2.0) * FORMATION_SPACING
+			var offset_z: float = (row - (rows - 1) / 2.0) * FORMATION_SPACING
+			slots.append(center + Vector3(offset_x, 0.0, offset_z))
+
+	var remaining_blobs: Array = blobs.duplicate()
+	var remaining_slots: Array = slots.duplicate()
+	var assignment: Dictionary = {}
+	while not remaining_blobs.is_empty():
+		var best_blob: Node = null
+		var best_slot: Vector3
+		var best_dist := INF
+		for blob in remaining_blobs:
+			for slot in remaining_slots:
+				var d: float = blob.global_position.distance_to(slot)
+				if d < best_dist:
+					best_dist = d
+					best_blob = blob
+					best_slot = slot
+		assignment[best_blob] = best_slot
+		remaining_blobs.erase(best_blob)
+		remaining_slots.erase(best_slot)
+	return blobs.map(func(b): return assignment[b])
 
 ## Assigns each selected blob to a nearby node of the same resource type as
 ## `clicked_node`, spreading the squad across up to TaskLock.MAX_WORKERS_PER_TARGET nodes
