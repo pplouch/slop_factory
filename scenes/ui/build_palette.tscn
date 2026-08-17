@@ -40,21 +40,14 @@ theme_override_colors/font_color = Color(0.8, 0.85, 1, 0.7)
 text = "Left-click: place   R: rotate   Right-click: demolish   Esc: exit"
 autowrap_mode = 2
 
-[node name="ExtractorButton" type="Button" parent="PalettePanel/VBox"]
+[node name="Scroll" type="ScrollContainer" parent="PalettePanel/VBox"]
 layout_mode = 2
-text = "Extractor (25 wood)"
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
 
-[node name="ProcessorButton" type="Button" parent="PalettePanel/VBox"]
+[node name="Grid" type="GridContainer" parent="PalettePanel/VBox/Scroll"]
 layout_mode = 2
-text = "Processor (30 wood) — 2 wood -> 1 plank"
-
-[node name="WaterExtractorButton" type="Button" parent="PalettePanel/VBox"]
-layout_mode = 2
-text = "Water Extractor (25 wood) — water tiles only"
-
-[node name="BuildingsSeparator" type="HSeparator" parent="PalettePanel/VBox"]
-layout_mode = 2
-
-[node name="BuildingsContainer" type="VBoxContainer" parent="PalettePanel/VBox"]
-layout_mode = 2
-theme_override_constants/separation = 6
+size_flags_horizontal = 3
+columns = 4
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
