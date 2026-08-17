@@ -93,6 +93,18 @@ var build_rate: float = BASE_BUILD_RATE
 var attack_power: float = BASE_ATTACK_POWER
 var attack_interval: float = BASE_ATTACK_INTERVAL
 
+## XP gained from killing enemies (see Enemy._on_death) and the level it's
+## accumulated into so far -- purely tracked/displayed for now, with no
+## stat payoff yet (see _gain_xp's own note: a way to evolve leveled units
+## into higher-tier ones is explicitly future scope, not implemented here).
+var xp: float = 0.0
+var level: int = 1
+## Linear XP curve: level N needs XP_PER_LEVEL_BASE + (N-1) * XP_PER_LEVEL_GROWTH
+## more than the last, so each level takes a little longer than the one
+## before rather than every level costing the same flat amount.
+const XP_PER_LEVEL_BASE := 20.0
+const XP_PER_LEVEL_GROWTH := 15.0
+
 var _kind_scale: float = 1.0
 var _attack_cooldown: float = 0.0
 ## The single material shared (via set_surface_override_material) across
@@ -578,6 +590,32 @@ func _update_combat(delta: float) -> void:
 			enemy.take_damage(attack_power, self)
 			_play_attack_swing()
 	_update_combat_regen(delta)
+
+## Called by Enemy._on_death when this blob landed the killing blow.
+## Applies `amount` of XP and rolls over into as many level-ups as it now
+## qualifies for (a big single kill could conceivably clear more than one
+## level at once, hence the loop rather than a single if). No stat payoff
+## yet -- see the xp/level fields' own note -- just the running total, a
+## level-up chirp/marker, and UnitInfoPanel's solo-selection display (see
+## _refresh_live_fields there) so leveling is at least visible today.
+func _gain_xp(amount: float) -> void:
+	if amount <= 0.0:
+		return
+	xp += amount
+	Effects.spawn_floating_text(get_parent(), global_position + Vector3(0.0, 1.6, 0.0), "+%d XP" % int(round(amount)), Color(0.6, 0.85, 1.0))
+	while xp >= _xp_to_next_level():
+		xp -= _xp_to_next_level()
+		level += 1
+		_on_level_up()
+
+## This blob's current level's XP requirement (see XP_PER_LEVEL_BASE/GROWTH).
+func _xp_to_next_level() -> float:
+	return XP_PER_LEVEL_BASE + (level - 1) * XP_PER_LEVEL_GROWTH
+
+## Plays a small celebratory cue the instant a blob levels up.
+func _on_level_up() -> void:
+	Effects.spawn_floating_text(get_parent(), global_position + Vector3(0.0, 1.9, 0.0), "Level Up!", Color(1.0, 0.9, 0.3))
+	Effects.spawn_command_marker(get_parent(), global_position + Vector3(0.0, 0.05, 0.0), Color(1.0, 0.9, 0.3, 1.0))
 
 ## Overrides Combatant's default "hit landed" feedback with something more
 ## alarming: a blob is *your* unit, so taking damage should read as bad

@@ -121,8 +121,11 @@ func _note_combat_activity() -> void:
 ## Resolves an incoming hit of `amount` from `attacker`: may be evaded based
 ## on this combatant's dexterity (a floating "Miss" instead of damage),
 ## otherwise applies the damage, shows kind-specific feedback (see
-## _show_damage_feedback), and triggers death at 0 HP.
-func take_damage(amount: float, _attacker: Node) -> void:
+## _show_damage_feedback), and triggers death at 0 HP. `attacker` is passed
+## through to _on_death so a killing blow can be attributed (see Enemy's
+## own override, which awards the attacker XP -- feature backlog: "units
+## should have XP gained from killing enemies").
+func take_damage(amount: float, attacker: Node) -> void:
 	_note_combat_activity()
 	if randf() < _evasion_chance():
 		Effects.spawn_floating_text(get_parent(), global_position + Vector3(0.0, 1.3, 0.0), "Miss", Color(0.85, 0.85, 0.85))
@@ -130,7 +133,7 @@ func take_damage(amount: float, _attacker: Node) -> void:
 	health -= amount
 	_show_damage_feedback(amount)
 	if health <= 0.0:
-		_on_death()
+		_on_death(attacker)
 
 ## Default damage feedback: a "hit landed" read (neutral/rewarding rather
 ## than alarming) -- this is what Enemy uses as-is, since the player taking
@@ -147,9 +150,11 @@ func _evasion_chance() -> float:
 	return clamp(dexterity * EVASION_PER_DEXTERITY, 0.0, MAX_EVASION_CHANCE)
 
 ## Default death behavior: a burst of particles, then removal from the
-## scene. Subclasses may override to add kind-specific handling (e.g. World
-## pruning a dead blob from the current selection) -- call super() to keep
-## the shared VFX-and-free behavior.
-func _on_death() -> void:
+## scene. `attacker` is whoever dealt the killing blow (see take_damage),
+## null if this death wasn't from a hit (not currently possible, but kept
+## optional rather than assumed non-null). Subclasses may override to add
+## kind-specific handling (e.g. Enemy awarding the attacker XP) -- call
+## super._on_death(attacker) to keep the shared VFX-and-free behavior.
+func _on_death(attacker: Node = null) -> void:
 	Effects.spawn_impact(get_parent(), global_position + Vector3(0.0, 0.7, 0.0), Color(0.5, 0.1, 0.1), 16)
 	queue_free()

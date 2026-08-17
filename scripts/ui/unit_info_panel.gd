@@ -71,6 +71,7 @@ var _tracked_group: Array = []
 var _group_chips: Dictionary = {}
 ## Only populated when exactly one blob is tracked (see _make_kind_box).
 var _solo_task_label: Label = null
+var _solo_level_label: Label = null
 var _solo_inventory_label: Label = null
 var _solo_equipped_label: Label = null
 
@@ -139,6 +140,7 @@ func _rebuild_view() -> void:
 		child.free()
 	_group_chips.clear()
 	_solo_task_label = null
+	_solo_level_label = null
 	_solo_inventory_label = null
 	_solo_equipped_label = null
 
@@ -211,6 +213,10 @@ func _make_kind_box(kind, blobs_of_kind: Array) -> Control:
 		_solo_task_label.add_theme_font_size_override("font_size", 12)
 		vbox.add_child(_solo_task_label)
 
+		_solo_level_label = Label.new()
+		_solo_level_label.add_theme_font_size_override("font_size", 12)
+		vbox.add_child(_solo_level_label)
+
 		_solo_inventory_label = Label.new()
 		_solo_inventory_label.add_theme_font_size_override("font_size", 12)
 		vbox.add_child(_solo_inventory_label)
@@ -259,6 +265,8 @@ func _refresh_live_fields() -> void:
 	var blob = _tracked_group[0]
 	if _solo_task_label:
 		_solo_task_label.text = "Task: %s" % blob.current_state.display_name(blob)
+	if _solo_level_label:
+		_solo_level_label.text = "Level %d (%d/%d XP)" % [blob.level, int(blob.xp), int(blob._xp_to_next_level())]
 	if _solo_inventory_label:
 		var total := 0
 		var parts: Array = []

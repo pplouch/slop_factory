@@ -103,6 +103,22 @@ func _ready() -> void:
 	_home = global_position
 	_pick_new_wander_target()
 
+## Overrides Combatant's default death handling to also award the killing
+## blow's attacker XP, if it was a Blob (duck-typed via has_method rather
+## than an `is Blob` check, so anything else that can somehow land a
+## killing blow -- nothing currently does -- doesn't crash here). XP scales
+## with this instance's own already-difficulty/kind-scaled stats rather
+## than a flat amount, so a tougher enemy is worth more (see feature
+## backlog: "units should have XP gained from killing enemies -- we'll add
+## a way to make units evolve into higher-tier units later", which is why
+## this only tracks XP/level for now with no stat payoff yet -- that's
+## explicitly future scope, not an oversight here).
+func _on_death(attacker: Node = null) -> void:
+	if attacker and attacker.has_method("_gain_xp"):
+		var xp_reward: int = max(1, int(round(max_health * 0.4 + attack_power * 1.5)))
+		attacker._gain_xp(xp_reward)
+	super._on_death(attacker)
+
 ## Shows only the one rig (see Enemy.tscn: BlobBody/QuadrupedBody/
 ## HumanoidBody) matching this kind's EnemyKinds.body_type, tints every
 ## mesh in that rig with one shared duplicated material (the same
