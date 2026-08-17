@@ -116,7 +116,10 @@ func _build_upgrade_rows() -> void:
 		_upgrade_labels[stat] = label
 		_upgrade_buttons[stat] = button
 
-## Creates one row (label + button) per archetype in BlobKinds.
+## Creates one row (label + button) per archetype in BlobKinds, with a
+## small color-swatch icon (Effects.make_swatch_texture) on the hire button
+## matching that kind's own body tint -- the project has no real unit
+## portraits, this is its placeholder.
 func _build_hire_rows() -> void:
 	for kind_id in BlobKinds.get_ordered_ids():
 		var kind = BlobKinds.get_kind(kind_id)
@@ -126,6 +129,7 @@ func _build_hire_rows() -> void:
 		label.text = "%s\n%s" % [kind.display_name, kind.stat_summary()]
 
 		var button := Button.new()
+		button.icon = Effects.make_swatch_texture(kind.body_color())
 		button.pressed.connect(func(): _hire(kind_id))
 
 		var row := HBoxContainer.new()

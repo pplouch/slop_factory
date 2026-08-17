@@ -12,7 +12,12 @@ extends Node
 ##
 ## Also owns the one place that maps a resource type ("wood", "stone", ...)
 ## to a display color, since that's a presentation concern the gameplay
-## scripts (Blob, resource nodes) shouldn't need to care about.
+## scripts (Blob, resource nodes) shouldn't need to care about, and
+## make_swatch_texture -- since the project has no external image assets
+## (every 3D visual is a code-built primitive mesh, see CLAUDE.md), a tiny
+## solid-color ImageTexture is this project's version of an icon/image
+## placeholder for 2D UI rows (BuildPalette/BuildingMenu/TechTreePanel)
+## that otherwise list building/blob kinds as text only.
 
 const FLOATING_TEXT_SCENE: PackedScene = preload("res://scenes/vfx/floating_text.tscn")
 const IMPACT_PARTICLES_SCENE: PackedScene = preload("res://scenes/vfx/impact_particles.tscn")
@@ -127,3 +132,15 @@ func resource_color(resource_type: String) -> Color:
 			return Color(0.25, 0.65, 0.7)
 		_:
 			return Color(1, 1, 1)
+
+## Builds a tiny solid-`color` square ImageTexture, cheap enough to create
+## fresh per UI row (a handful of pixels, generated once when each row is
+## built, never regenerated after) -- used as a `Button.icon` swatch
+## standing in for a building/blob kind's look wherever a UI list would
+## otherwise be text-only (BuildPalette, BuildingMenu's Hire rows,
+## TechTreePanel). `size` stays small since Button already scales its icon
+## down to font-height regardless.
+func make_swatch_texture(color: Color, size: int = 16) -> ImageTexture:
+	var img := Image.create(size, size, false, Image.FORMAT_RGB8)
+	img.fill(color)
+	return ImageTexture.create_from_image(img)

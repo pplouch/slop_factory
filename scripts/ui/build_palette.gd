@@ -29,6 +29,13 @@ signal kind_selected(kind_id: String)
 const SELECTED_TINT := Color(1.0, 0.92, 0.5)
 const NORMAL_TINT := Color(1, 1, 1)
 
+# Display colors for the 3 fixed factory pieces (not BuildingKinds entries,
+# so they have no kind.display_color to read) -- matching each one's own
+# scene's dominant mesh material, same convention BuildingKinds.Kind uses.
+const EXTRACTOR_COLOR := Color(0.45, 0.42, 0.4)
+const PROCESSOR_COLOR := Color(0.35, 0.38, 0.42)
+const WATER_EXTRACTOR_COLOR := Color(0.3, 0.55, 0.75)
+
 var _building_buttons: Dictionary = {}
 
 
@@ -41,16 +48,23 @@ func _ready() -> void:
 	extractor_button.pressed.connect(func(): kind_selected.emit("extractor"))
 	processor_button.pressed.connect(func(): kind_selected.emit("processor"))
 	water_extractor_button.pressed.connect(func(): kind_selected.emit("water_extractor"))
+	extractor_button.icon = Effects.make_swatch_texture(EXTRACTOR_COLOR)
+	processor_button.icon = Effects.make_swatch_texture(PROCESSOR_COLOR)
+	water_extractor_button.icon = Effects.make_swatch_texture(WATER_EXTRACTOR_COLOR)
 	_build_building_buttons()
 	GameManager.building_unlocked.connect(func(_id): _refresh_building_buttons())
 	_refresh_building_buttons()
 
-## Creates one button per BuildingKinds entry (hidden until unlocked).
+## Creates one button per BuildingKinds entry (hidden until unlocked), with
+## a small color-swatch icon standing in for its look (see
+## Effects.make_swatch_texture -- the project has no real building
+## thumbnails/images, this is its placeholder).
 func _build_building_buttons() -> void:
 	for building_id in BuildingKinds.get_ordered_ids():
 		var kind = BuildingKinds.get_kind(building_id)
 		var button := Button.new()
 		button.text = "%s (%d wood)" % [kind.display_name, kind.build_cost]
+		button.icon = Effects.make_swatch_texture(kind.display_color)
 		button.pressed.connect(func(): kind_selected.emit(building_id))
 		buildings_container.add_child(button)
 		_building_buttons[building_id] = button

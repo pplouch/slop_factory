@@ -69,6 +69,7 @@ func _build_building_rows() -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 		var button := Button.new()
+		button.icon = Effects.make_swatch_texture(kind.display_color)
 		button.pressed.connect(func(): GameManager.try_unlock_building(building_id))
 
 		var row := HBoxContainer.new()
@@ -93,6 +94,7 @@ func _build_blob_rows() -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 		var button := Button.new()
+		button.icon = Effects.make_swatch_texture(kind.body_color())
 		button.pressed.connect(func(): GameManager.try_unlock_blob_kind(blob_kind_id))
 
 		var row := HBoxContainer.new()

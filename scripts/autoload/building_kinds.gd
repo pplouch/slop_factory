@@ -44,11 +44,16 @@ class Kind:
 	## instance needs before it finishes construction and becomes usable --
 	## see Building/StorageDepot's add_construction_progress.
 	var build_labor: float
+	## This kind's dominant/most recognizable mesh color, matching its own
+	## scene -- purely a UI convenience (BuildPalette/TechTreePanel icon
+	## swatches, see Effects.make_swatch_texture), not read anywhere the
+	## actual 3D scene is built.
+	var display_color: Color
 
 	func _init(p_id: String, p_name: String, p_scene_path: String, p_build_cost: int,
 			p_input_ports: Array, p_output_ports: Array, p_unlock_cost: int, p_requires: String,
 			p_max_durability: int, p_upgrade_costs: Array, p_upgrade_perks: Array,
-			p_build_labor: float = 20.0) -> void:
+			p_build_labor: float = 20.0, p_display_color: Color = Color.WHITE) -> void:
 		id = p_id
 		display_name = p_name
 		scene = load(p_scene_path)
@@ -61,6 +66,7 @@ class Kind:
 		upgrade_costs = p_upgrade_costs
 		upgrade_perks = p_upgrade_perks
 		build_labor = p_build_labor
+		display_color = p_display_color
 
 
 ## Godot lifecycle hook: registers every building type. Town Hall is the
@@ -74,21 +80,21 @@ func _ready() -> void:
 		[Vector2i(0, -1), Vector2i(-1, 0)], [], 0, "",
 		150, [40, 80, 140],
 		["Spawn timer 15% faster", "Spawn timer 15% faster again, hire costs -10%", "Free spawns arrive as a random kind instead of always worker"],
-		30.0
+		30.0, Color(0.78, 0.68, 0.5)
 	))
 	_register(Kind.new(
 		"storage_depot", "Storage Depot", "res://scenes/buildings/storage_depot.tscn", 40,
 		[Vector2i(0, -1), Vector2i(-1, 0)], [Vector2i(0, 1), Vector2i(1, 0)], 60, "town_hall",
 		100, [35, 70],
 		["Buffer capacity +2", "Buffer capacity +2 again"],
-		18.0
+		18.0, Color(0.45, 0.32, 0.55)
 	))
 	_register(Kind.new(
 		"water_tank", "Water Tank", "res://scenes/buildings/water_tank.tscn", 35,
 		[Vector2i(0, -1)], [Vector2i(0, 1)], 50, "town_hall",
 		90, [30, 60],
 		["Buffer capacity +4", "Buffer capacity +4 again"],
-		16.0
+		16.0, Color(0.3, 0.55, 0.68)
 	))
 	# Wall and Belt are LinkableBuilding entries (see scripts/core/linkable_building.gd)
 	# rather than fixed always-available factory pieces -- they still need to
@@ -104,14 +110,14 @@ func _ready() -> void:
 		[], [], 0, "",
 		60, [],
 		[],
-		8.0
+		8.0, Color(0.55, 0.52, 0.48)
 	))
 	_register(Kind.new(
 		"belt", "Belt", "res://scenes/factory/belt_segment.tscn", 5,
 		[], [], 0, "",
 		40, [],
 		[],
-		6.0
+		6.0, Color(0.15, 0.15, 0.18)
 	))
 	# Research Center is the tech tree's knowledge source (see
 	# scripts/buildings/research_center.gd) -- its own upgrade tiers boost
@@ -122,7 +128,7 @@ func _ready() -> void:
 		[], [], 80, "town_hall",
 		110, [40, 80],
 		["Knowledge trickle +50%", "Knowledge trickle +50% again"],
-		22.0
+		22.0, Color(0.25, 0.65, 0.7)
 	))
 	# The next 4 are stub buildings (see scripts/buildings/simple_building.gd
 	# and CLAUDE.md's feature backlog: "New building stubs, logic not
@@ -135,28 +141,28 @@ func _ready() -> void:
 		[], [], 30, "town_hall",
 		40, [],
 		[],
-		10.0
+		10.0, Color(0.35, 0.62, 0.25)
 	))
 	_register(Kind.new(
 		"school", "School", "res://scenes/buildings/school.tscn", 70,
 		[], [], 100, "town_hall",
 		120, [],
 		[],
-		26.0
+		26.0, Color(0.65, 0.7, 0.78)
 	))
 	_register(Kind.new(
 		"tavern", "Tavern", "res://scenes/buildings/tavern.tscn", 55,
 		[], [], 70, "town_hall",
 		100, [],
 		[],
-		20.0
+		20.0, Color(0.5, 0.15, 0.12)
 	))
 	_register(Kind.new(
 		"house", "House", "res://scenes/buildings/house.tscn", 30,
 		[], [], 40, "town_hall",
 		80, [],
 		[],
-		14.0
+		14.0, Color(0.45, 0.28, 0.18)
 	))
 	# Pipe is a LinkableBuilding (see scripts/factory/pipe.gd) like Wall/Belt,
 	# but -- unlike them -- gated behind water_tank rather than seeded
@@ -167,7 +173,7 @@ func _ready() -> void:
 		[], [], 40, "water_tank",
 		50, [],
 		[],
-		8.0
+		8.0, Color(0.5, 0.55, 0.6)
 	))
 
 ## Thin covariant override: keeps callers' `var kind := BuildingKinds.get_kind(id)`
