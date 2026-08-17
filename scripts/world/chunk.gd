@@ -34,6 +34,13 @@ const RESOURCE_SPAWN_MARGIN := 0.4  # fraction of CHUNK_SIZE kept clear of the v
 const ANIMAL_CHANCE := 0.35
 const ANIMAL_SCENE: PackedScene = preload("res://scenes/world_objects/animal.tscn")
 
+## Chance this chunk gets a single lootable Chest (see feature backlog:
+## "add chests and scatter them on the map") -- deliberately rarer than
+## Animal's own huddle chance, since a chest's one-time haul is meant to
+## read as a small find, not an everyday feature of the landscape.
+const CHEST_CHANCE := 0.1
+const CHEST_SCENE: PackedScene = preload("res://scenes/world_objects/chest.tscn")
+
 ## Rivers/lakes are placed procedurally (see Biomes.is_river_at/is_lake_at)
 ## rather than at a flat per-chunk chance -- a chunk only gets a harvestable
 ## water source if one of a few sampled points inside it actually lands on
@@ -65,6 +72,8 @@ func generate(coord: Vector2i, p_biome: Biomes.Biome) -> void:
 		var count := randi_range(1, 3)
 		for i in count:
 			_spawn_one(ANIMAL_SCENE)
+	if randf() < CHEST_CHANCE:
+		_maybe_spawn_chest()
 
 ## Builds the ground mesh (height-displaced plane, biome-tinted procedural
 ## texture) and a matching flat collision box for raycasting -- the
@@ -212,3 +221,18 @@ func _spawn_one(scene: PackedScene) -> void:
 	var inst: Node3D = scene.instantiate()
 	add_child(inst)
 	inst.position = Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+
+## Spawns one Chest at a random point in this chunk (see CHEST_CHANCE) --
+## skipped entirely if the rolled spot happens to land on water, rather
+## than a chest floating in a lake (no retry, unlike _maybe_spawn_water's
+## several attempts -- a chest simply not appearing in this particular
+## chunk is a fine outcome given how rare it already is).
+func _maybe_spawn_chest() -> void:
+	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
+	var local := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+	if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
+		return
+	var inst: Node3D = CHEST_SCENE.instantiate()
+	add_child(inst)
+	inst.position = local
+	inst.rotation.y = randf() * TAU
