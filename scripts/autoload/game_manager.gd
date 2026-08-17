@@ -18,6 +18,9 @@ signal upgrade_changed(stat: String, level: int)
 ## Fired whenever a building type is unlocked. BuildPalette listens to reveal
 ## its button; BuildingMenu listens to drop it from the "Unlock Buildings" list.
 signal building_unlocked(building_id: String)
+## Fired whenever a blob archetype is unlocked. BuildingMenu listens to
+## reveal its Hire row; TechTreePanel listens to drop it from its own list.
+signal blob_kind_unlocked(blob_kind_id: String)
 
 ## Every upgradeable stat, in the order BuildingMenu displays them. Adding a
 ## new upgrade is: add it here, add its display name and per-level bonus
@@ -80,6 +83,16 @@ var unlocked_buildings: Dictionary = {
 	"town_hall": true,
 	"wall": true,
 	"belt": true,
+}
+
+## Tech-tree unlock state for blob archetypes, keyed by BlobKinds id -- the
+## same "spend knowledge once, permanently available" shape as
+## unlocked_buildings, just for hireable kinds instead of buildings. Only
+## "worker" (BlobKinds' own _default_id) is seeded unlocked; the rest
+## (scout/hauler/brute/builder) must be bought via try_unlock_blob_kind
+## before BuildingMenu's Hire section will show a row for them.
+var unlocked_blob_kinds: Dictionary = {
+	"worker": true,
 }
 
 ## Godot lifecycle hook: marks the moment the difficulty ramp starts
@@ -219,5 +232,36 @@ func try_unlock_building(building_id: String) -> bool:
 	try_spend("knowledge", kind.unlock_cost)
 	unlocked_buildings[building_id] = true
 	building_unlocked.emit(building_id)
+	return true
+
+## Whether `blob_kind_id` has been unlocked and can be hired.
+func is_blob_kind_unlocked(blob_kind_id: String) -> bool:
+	return unlocked_blob_kinds.get(blob_kind_id, false)
+
+## Whether `blob_kind_id` can be unlocked right now: isn't already unlocked,
+## its prerequisite kind (if any) is already unlocked, and the player can
+## afford its knowledge cost. Used to grey out TechTreePanel's blob-kind
+## unlock buttons. Unlike can_unlock_building, doesn't need a "does this id
+## even exist" null check -- BlobKinds falls back to "worker" for any
+## unknown id (see BlobKinds._default_id) rather than returning null, and
+## this is only ever called with ids from BlobKinds.get_ordered_ids().
+func can_unlock_blob_kind(blob_kind_id: String) -> bool:
+	if is_blob_kind_unlocked(blob_kind_id):
+		return false
+	var kind = BlobKinds.get_kind(blob_kind_id)
+	if kind.requires != "" and not is_blob_kind_unlocked(kind.requires):
+		return false
+	return can_afford("knowledge", kind.unlock_cost)
+
+## Attempts to unlock `blob_kind_id`: spends the knowledge and marks it
+## unlocked (emitting blob_kind_unlocked) if eligible, otherwise leaves
+## state untouched. Returns whether the unlock went through.
+func try_unlock_blob_kind(blob_kind_id: String) -> bool:
+	if not can_unlock_blob_kind(blob_kind_id):
+		return false
+	var kind = BlobKinds.get_kind(blob_kind_id)
+	try_spend("knowledge", kind.unlock_cost)
+	unlocked_blob_kinds[blob_kind_id] = true
+	blob_kind_unlocked.emit(blob_kind_id)
 	return true
 

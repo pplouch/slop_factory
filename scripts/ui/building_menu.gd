@@ -46,6 +46,11 @@ var _current_building: Node = null
 var _upgrade_labels: Dictionary = {}
 var _upgrade_buttons: Dictionary = {}
 var _hire_buttons: Dictionary = {}
+## Each blob kind's whole row (label + button), tracked separately from
+## _hire_buttons so a not-yet-unlocked kind's row can be hidden entirely --
+## see feature backlog: "New blob kinds unlock over time; hidden in UI
+## until unlocked." Unlocking itself happens in TechTreePanel, not here.
+var _hire_rows: Dictionary = {}
 
 
 ## Godot lifecycle hook: starts hidden, builds every rows section from its
@@ -60,6 +65,7 @@ func _ready() -> void:
 	backdrop.gui_input.connect(_on_backdrop_gui_input)
 	GameManager.resource_changed.connect(func(_type, _total): _refresh())
 	GameManager.upgrade_changed.connect(func(_stat, _level): _refresh())
+	GameManager.blob_kind_unlocked.connect(func(_id): _refresh())
 
 ## Godot per-frame hook: factory pieces (belt/extractor/processor) have
 ## live status (carrying/buffered/linked) that changes every frame rather
@@ -128,6 +134,7 @@ func _build_hire_rows() -> void:
 		hire_rows_container.add_child(row)
 
 		_hire_buttons[kind_id] = button
+		_hire_rows[kind_id] = row
 
 ## Button handler for a hire row: asks the currently-open building to spend
 ## wood and spawn the given kind. The building (not this menu) owns spawn
@@ -158,6 +165,10 @@ func _refresh() -> void:
 		_upgrade_buttons[stat].disabled = not GameManager.can_afford_upgrade(stat)
 
 	for kind_id in BlobKinds.get_ordered_ids():
+		var unlocked: bool = GameManager.is_blob_kind_unlocked(kind_id)
+		_hire_rows[kind_id].visible = unlocked
+		if not unlocked:
+			continue
 		var kind = BlobKinds.get_kind(kind_id)
 		_hire_buttons[kind_id].text = "Hire (%d wood)" % kind.hire_cost
 		_hire_buttons[kind_id].disabled = not GameManager.can_afford_cost(kind.hire_cost)

@@ -53,6 +53,27 @@ layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="Rows" type="VBoxContainer" parent="Panel/VBox/Scroll"]
+[node name="Content" type="VBoxContainer" parent="Panel/VBox/Scroll"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="BuildingsTitle" type="Label" parent="Panel/VBox/Scroll/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Buildings"
+
+[node name="BuildingRows" type="VBoxContainer" parent="Panel/VBox/Scroll/Content"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="HSeparatorBlobs" type="HSeparator" parent="Panel/VBox/Scroll/Content"]
+layout_mode = 2
+
+[node name="BlobsTitle" type="Label" parent="Panel/VBox/Scroll/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Blob Kinds"
+
+[node name="BlobRows" type="VBoxContainer" parent="Panel/VBox/Scroll/Content"]
 layout_mode = 2
 theme_override_constants/separation = 6
