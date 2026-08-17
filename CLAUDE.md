@@ -151,9 +151,9 @@ The player handed over a 17-item feature/bug list in one go; it's being worked t
 - [x] Enemies don't collide with walls (or any building) — root cause found empirically (see the physics-testing gotcha above): `Wall`'s collider was a small center post, not the full grid cell, leaving a gap between adjacent wall cells that only non-pathing actors (enemies) could exploit — `363290d`.
 - [x] Minimap click → camera moves to that point — `11eee9a`.
 - [x] Clicking an enemy shows a basic-info popup — `a10124e`, `0dc942a`.
+- [x] Map height isn't visible; should feel organic (valleys/mountains/fields) — root cause was amplitude, not the noise shape: `Biomes.height_noise` already had multi-octave fractal detail, but per-biome `height_amplitude` (0.12-0.5) was too subtle to read from the steep RTS camera. Added a second, biome-independent `macro_height_noise` layer (low frequency, larger amplitude) summed on top for multi-chunk valleys/mountains, and increased (but narrowed the *range* of) per-biome amplitudes -- narrowing the range specifically to keep the real geometric seam at biome-differing chunk borders small (a chunk is assigned one fixed biome, so the shared height_noise value gets multiplied by two different amplitudes on either side of such a border; verified empirically that the macro layer, not this seam, is what drives the large ridges/valleys now visible, by comparing screenshots before/after narrowing the per-biome range at the same map location and seeing the landform unchanged).
 
 **Not started (roughly ordered new-content/design-heavy → most involved):**
-- [ ] Map height isn't visible; should feel organic (valleys/mountains/fields).
 - [ ] Fog on the game screen itself (dark, coherent with the minimap's existing fog-of-war).
 - [ ] Remove water resource-node points; water only from rivers/lakes.
 - [ ] New building stubs, logic not required yet: Research Center, Patch of Vegetables, School, Tavern, House, Pipe (a `LinkableBuilding`), Water Extractor (placeable only on water, with build-mode visibility of legal spots — mirrors `Extractor`'s existing range-indicator pattern).

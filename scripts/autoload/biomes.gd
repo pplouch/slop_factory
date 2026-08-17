@@ -22,6 +22,14 @@ class Biome:
 	var id: String
 	var display_name: String
 	var ground_color: Color
+	## Scales the fine per-vertex height_noise layer only (see height_at) --
+	## keep deltas between biomes modest. A chunk is assigned one fixed
+	## biome for its whole area, so at a border between two differently-
+	## biomed chunks the same shared height_noise value gets multiplied by
+	## two different amplitudes on either side, producing a real geometric
+	## seam (not just a color-tint difference) the size of that delta. The
+	## macro_height_noise layer (biome-independent, always continuous) is
+	## what should carry big, obviously-organic elevation changes instead.
 	var height_amplitude: float
 	## Array of {scene: PackedScene, resource_type: String} -- resource
 	## nodes this biome scatters. Kept as scene+type pairs (not just a
@@ -62,6 +70,15 @@ var _ordered_ids: Array = []
 ## "multiple noise layers summed together" for us) so the ground reads as
 ## naturally uneven at more than one scale instead of one smooth wave.
 var height_noise := FastNoiseLite.new()
+## A second, much-lower-frequency field summed on top of height_noise for
+## broad, multi-chunk valleys/mountains -- height_noise alone only shapes
+## relief within roughly one chunk's width, so every chunk of a given biome
+## ended up an equally-bumpy repeat of the last rather than the landscape
+## rising into a mountain range or sinking into a valley over a stretch of
+## many chunks. Biome-independent (unlike height_noise, it isn't scaled by
+## Biome.height_amplitude) so a mountain ridge reads as one continuous
+## landform even where it happens to cross a biome boundary.
+var macro_height_noise := FastNoiseLite.new()
 ## Biome-classification fields, all much lower frequency than height_noise
 ## since a biome region should span many chunks, not fluctuate chunk to
 ## chunk.
@@ -95,8 +112,16 @@ const LAKE_THRESHOLD := 0.35
 ## spawn standing in a lake.
 const WATER_SAFE_RADIUS := 12.0
 ## How far rivers/lakes sink the ground mesh, purely cosmetic (ground
-## collision stays flat regardless, per project convention).
-const WATER_BASIN_DEPTH := 0.6
+## collision stays flat regardless, per project convention). Bumped up
+## alongside the new macro_height_noise layer below so a river/lake still
+## reads as clearly recessed against the now much larger overall terrain
+## relief range, instead of looking like it's merely dipped a token amount.
+const WATER_BASIN_DEPTH := 1.0
+## Amplitude of the broad macro_height_noise layer -- deliberately larger
+## than any single biome's height_amplitude so multi-chunk mountains/valleys
+## read as the dominant landform, with each biome's own height_amplitude
+## adding smaller-scale local texture on top (see height_at).
+const MACRO_HEIGHT_AMPLITUDE := 2.4
 
 
 func _ready() -> void:
@@ -106,6 +131,13 @@ func _ready() -> void:
 	height_noise.fractal_octaves = 4
 	height_noise.fractal_lacunarity = 2.0
 	height_noise.fractal_gain = 0.5
+
+	macro_height_noise.seed = 1500
+	macro_height_noise.noise_type = FastNoiseLite.TYPE_PERLIN
+	macro_height_noise.frequency = 0.006
+	macro_height_noise.fractal_octaves = 3
+	macro_height_noise.fractal_lacunarity = 2.0
+	macro_height_noise.fractal_gain = 0.5
 
 	temperature_noise.seed = 2000
 	temperature_noise.noise_type = FastNoiseLite.TYPE_PERLIN
@@ -128,31 +160,31 @@ func _ready() -> void:
 	lake_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	lake_noise.frequency = 0.006
 
-	_register(Biome.new("plains", "Plains", Color(0.29, 0.56, 0.24), 0.15,
+	_register(Biome.new("plains", "Plains", Color(0.29, 0.56, 0.24), 0.4,
 		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": ROCK_SCENE, "resource_type": "stone"}],
 		["slime"]
 	))
-	_register(Biome.new("forest", "Forest", Color(0.16, 0.42, 0.2), 0.3,
+	_register(Biome.new("forest", "Forest", Color(0.16, 0.42, 0.2), 0.6,
 		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": MUSHROOM_SCENE, "resource_type": "mushroom"}],
 		["wolf", "spider"]
 	))
-	_register(Biome.new("desert", "Desert", Color(0.76, 0.68, 0.42), 0.4,
+	_register(Biome.new("desert", "Desert", Color(0.76, 0.68, 0.42), 0.7,
 		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": CACTUS_SCENE, "resource_type": "cactus_fiber"}],
 		["scorpion", "bandit"]
 	))
-	_register(Biome.new("tundra", "Tundra", Color(0.82, 0.87, 0.92), 0.22,
+	_register(Biome.new("tundra", "Tundra", Color(0.82, 0.87, 0.92), 0.5,
 		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": ICE_CRYSTAL_SCENE, "resource_type": "ice_crystal"}],
 		["yeti", "wolf"]
 	))
-	_register(Biome.new("swamp", "Swamp", Color(0.24, 0.3, 0.2), 0.12,
+	_register(Biome.new("swamp", "Swamp", Color(0.24, 0.3, 0.2), 0.35,
 		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": MUSHROOM_SCENE, "resource_type": "mushroom"}],
 		["leech", "spider"]
 	))
-	_register(Biome.new("jungle", "Jungle", Color(0.11, 0.48, 0.16), 0.32,
+	_register(Biome.new("jungle", "Jungle", Color(0.11, 0.48, 0.16), 0.6,
 		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": MUSHROOM_SCENE, "resource_type": "mushroom"}],
 		["panther", "wolf"]
 	))
-	_register(Biome.new("volcanic", "Volcanic", Color(0.28, 0.14, 0.12), 0.5,
+	_register(Biome.new("volcanic", "Volcanic", Color(0.28, 0.14, 0.12), 0.9,
 		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": OBSIDIAN_SCENE, "resource_type": "obsidian"}],
 		["imp", "scorpion"]
 	))
@@ -199,12 +231,17 @@ func biome_for_world_pos(world_pos: Vector3) -> Biome:
 func _remap(n: float) -> float:
 	return clamp((n + 1.0) * 0.5, 0.0, 1.0)
 
-## This biome's terrain height at `world_x`/`world_z`, sunk into a basin if
-## the position also falls in a river or lake (see is_water_at) -- the
-## single shared height_noise field means any two chunks sampling the same
-## world position always agree, unlike the old per-chunk-seeded noise.
+## This biome's terrain height at `world_x`/`world_z`: a broad, biome-
+## independent macro_height_noise layer (multi-chunk valleys/mountains) plus
+## this biome's own finer height_noise layer (local unevenness, scaled by
+## Biome.height_amplitude so e.g. Volcanic reads craggier than Plains),
+## sunk into a basin if the position also falls in a river or lake (see
+## is_water_at). Both noise fields are shared/world-space-sampled, so any
+## two chunks sampling the same world position always agree, unlike the old
+## per-chunk-seeded noise.
 func height_at(world_x: float, world_z: float, biome: Biome) -> float:
-	var height: float = height_noise.get_noise_2d(world_x, world_z) * biome.height_amplitude
+	var height: float = macro_height_noise.get_noise_2d(world_x, world_z) * MACRO_HEIGHT_AMPLITUDE
+	height += height_noise.get_noise_2d(world_x, world_z) * biome.height_amplitude
 	if is_water_at(world_x, world_z):
 		height -= WATER_BASIN_DEPTH
 	return height
