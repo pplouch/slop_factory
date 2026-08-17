@@ -13,6 +13,10 @@ extends Node3D
 ## without any layout-specific branching.
 
 const PAN_SPEED := 60.0
+## Held Shift multiplies pan speed for quickly crossing the map (see
+## feature backlog: "pressing shift while moving the camera should move it
+## quicker").
+const SHIFT_SPEED_MULTIPLIER := 2.5
 const ZOOM_MIN := 0.6
 const ZOOM_MAX := 2.8
 const ZOOM_STEP := 0.1
@@ -48,7 +52,8 @@ func _process(delta: float) -> void:
 	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
 		move.x += 1.0
 	if move != Vector2.ZERO:
-		move = move.normalized() * PAN_SPEED * delta
+		var speed_mult := SHIFT_SPEED_MULTIPLIER if (Input.is_physical_key_pressed(KEY_SHIFT)) else 1.0
+		move = move.normalized() * PAN_SPEED * speed_mult * delta
 		var forward := -transform.basis.z
 		forward.y = 0.0
 		forward = forward.normalized()

@@ -50,7 +50,8 @@ const CONSTRUCTION_BAR_COLOR := Color(1.0, 0.85, 0.3, 1.0)
 
 ## Null while finished/not yet built -- see _refresh_construction_bar.
 var _construction_bar_root: Node3D = null
-var _construction_bar_fill_pivot: Node3D = null
+var _construction_bar_fill: MeshInstance3D = null
+var _construction_bar_fill_mesh: QuadMesh = null
 
 
 ## Reads max_durability/durability from this instance's BuildingKinds entry.
@@ -123,11 +124,27 @@ func _refresh_construction_bar(fraction: float) -> void:
 		if _construction_bar_root:
 			_construction_bar_root.queue_free()
 			_construction_bar_root = null
-			_construction_bar_fill_pivot = null
+			_construction_bar_fill = null
+			_construction_bar_fill_mesh = null
 		return
 	if _construction_bar_root == null:
 		_build_construction_bar()
-	_construction_bar_fill_pivot.scale.x = clamp(fraction, 0.0, 1.0)
+	# Directly resizes the fill QuadMesh's own geometry and repositions its
+	# instance to keep the left edge pinned to the bg's left edge as the
+	# right edge grows -- rather than the more common "scale a pivoted
+	# child" bar trick (still fine for Combatant's own health bar, which
+	# only shrinks). A billboarded quad under a *non-uniformly* scaled
+	# parent (scale.x changing, y/z fixed at 1) doesn't grow in place the
+	# way a flat 2D UI bar would -- it visibly reads as the gold fill
+	# sliding in from one side rather than filling, since the billboard
+	# reconstructs the quad's facing every frame from a transform whose
+	# scale was never uniform to begin with (see feature backlog: "the bar
+	# doesn't fill with gold but a gold bar translates slowly into the
+	# empty bar"). Resizing the mesh resource itself sidesteps that
+	# entirely -- there's no parent scale involved at all.
+	var fill_width: float = CONSTRUCTION_BAR_WIDTH * clamp(fraction, 0.0, 1.0)
+	_construction_bar_fill_mesh.size = Vector2(max(fill_width, 0.001), CONSTRUCTION_BAR_HEIGHT)
+	_construction_bar_fill.position.x = -CONSTRUCTION_BAR_WIDTH * 0.5 + fill_width * 0.5
 
 ## Builds a two-quad billboarded progress bar (dark background + gold fill),
 ## the same construction Combatant._build_health_bar uses for a unit's
@@ -136,6 +153,9 @@ func _refresh_construction_bar(fraction: float) -> void:
 ## render_priority. Floats above the structure (rather than at its feet like
 ## a health bar) so it stays visible over the mesh that's still rising
 ## toward it (see _apply_construction_visual) instead of the two overlapping.
+## Unlike Combatant's own bar, the fill quad isn't parented under a scaled
+## pivot -- see _refresh_construction_bar's own comment for why this bar
+## resizes the QuadMesh resource directly instead.
 func _build_construction_bar() -> void:
 	_construction_bar_root = Node3D.new()
 	_construction_bar_root.position = Vector3(0.0, CONSTRUCTION_BAR_Y, 0.0)
@@ -156,13 +176,8 @@ func _build_construction_bar() -> void:
 	bg.mesh = bg_mesh
 	_construction_bar_root.add_child(bg)
 
-	_construction_bar_fill_pivot = Node3D.new()
-	_construction_bar_fill_pivot.position = Vector3(-CONSTRUCTION_BAR_WIDTH * 0.5, 0.0, 0.002)
-	_construction_bar_root.add_child(_construction_bar_fill_pivot)
-
-	var fill := MeshInstance3D.new()
-	var fill_mesh := QuadMesh.new()
-	fill_mesh.size = Vector2(CONSTRUCTION_BAR_WIDTH, CONSTRUCTION_BAR_HEIGHT)
+	_construction_bar_fill_mesh = QuadMesh.new()
+	_construction_bar_fill_mesh.size = Vector2(0.001, CONSTRUCTION_BAR_HEIGHT)
 	var fill_mat := StandardMaterial3D.new()
 	fill_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fill_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
@@ -170,10 +185,12 @@ func _build_construction_bar() -> void:
 	fill_mat.no_depth_test = true
 	fill_mat.render_priority = 2
 	fill_mat.albedo_color = CONSTRUCTION_BAR_COLOR
-	fill_mesh.material = fill_mat
-	fill.mesh = fill_mesh
-	fill.position = Vector3(CONSTRUCTION_BAR_WIDTH * 0.5, 0.0, 0.0)
-	_construction_bar_fill_pivot.add_child(fill)
+	_construction_bar_fill_mesh.material = fill_mat
+
+	_construction_bar_fill = MeshInstance3D.new()
+	_construction_bar_fill.mesh = _construction_bar_fill_mesh
+	_construction_bar_fill.position = Vector3(-CONSTRUCTION_BAR_WIDTH * 0.5, 0.0, 0.002)
+	_construction_bar_root.add_child(_construction_bar_fill)
 
 ## Attempts to spend this instance's next upgrade level's knowledge cost
 ## (see BuildingKinds.upgrade_costs) -- knowledge, not wood, since a

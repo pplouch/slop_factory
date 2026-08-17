@@ -33,10 +33,16 @@ const ORE_TO_BAR := {
 	"slopium": "slopium_bar",
 }
 
-## Grid-cell offsets from this building's own cell, matching
-## BuildingKinds.get_kind("foundry").input_ports/output_ports.
-const INPUT_PORT := Vector2i(0, -1)
-const OUTPUT_PORT := Vector2i(0, 1)
+## Grid direction this foundry's output belt must be placed in (input feeds
+## from the opposite side) -- an @export like Extractor/Processor's own
+## `facing` rather than BuildableStructure's usual fixed world-relative
+## BuildingKinds ports, so BuildingManager's existing "facing" in node
+## duck-type (see try_place_structure) picks it up for free and 'R' rotates
+## it in build mode same as those two (see feature backlog: "when in build
+## mode, I can't turn buildings like foundry -- the input and output stays
+## at the same place"). Set by World at placement time, before this node
+## enters the tree, same as Extractor/Processor.
+@export var facing: Vector2i = Vector2i(0, 1)
 
 ## Which ore type the single buffer is currently locked to -- "" means
 ## empty/unlocked, free to start buffering any ore next delivery.
@@ -140,7 +146,7 @@ func _effective_process_time() -> float:
 func _output_is_free() -> bool:
 	var world = get_parent()
 	var my_cell: Vector2i = world.world_to_grid(global_position)
-	var output_structure: Node = world.get_structure_at(my_cell + OUTPUT_PORT)
+	var output_structure: Node = world.get_structure_at(my_cell + facing)
 	if output_structure == null:
 		return true
 	if "is_under_construction" in output_structure and output_structure.is_under_construction:
@@ -164,11 +170,11 @@ func _finish_batch() -> void:
 
 	var world = get_parent()
 	var my_cell: Vector2i = world.world_to_grid(global_position)
-	var output_structure: Node = world.get_structure_at(my_cell + OUTPUT_PORT)
-	var output_pos := global_position + Vector3(OUTPUT_PORT.x, 0.0, OUTPUT_PORT.y) * (CELL_SIZE * 0.5)
+	var output_structure: Node = world.get_structure_at(my_cell + facing)
+	var output_pos := global_position + Vector3(facing.x, 0.0, facing.y) * (CELL_SIZE * 0.5)
 	var item := Effects.spawn_resource_item(world, output_pos, bar_type, 1)
 
-	if output_structure and output_structure.has_method("try_receive_input") and output_structure.try_receive_input(item, OUTPUT_PORT):
+	if output_structure and output_structure.has_method("try_receive_input") and output_structure.try_receive_input(item, facing):
 		return
 	GameManager.add_resource(bar_type, 1)
 	item.queue_free()

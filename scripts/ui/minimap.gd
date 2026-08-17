@@ -21,6 +21,7 @@ signal camera_move_requested(world_pos: Vector3)
 
 const BG_COLOR := Color(0.05, 0.09, 0.05, 0.92)
 const BORDER_COLOR := Color(1, 1, 1, 0.4)
+const CAMERA_SQUARE_COLOR := Color(1, 1, 1, 0.85)
 
 const DOT_RESOURCE := Color(0.4, 0.9, 0.4)
 const DOT_BUILDING := Color(0.95, 0.85, 0.3)
@@ -44,6 +45,15 @@ var _fog_world_half_size := 90.0
 
 var _world_half_size := 75.0
 
+## Set once by World alongside set_world_bounds/set_fog_source -- lets this
+## minimap re-center on the camera's own live position every frame (see
+## _camera_center/_world_to_local) and draw its current ground footprint
+## (see _draw_camera_square), instead of always showing a fixed view
+## centered on the world origin (see feature backlog: "minimap should move
+## with the camera, and camera square should be visible on the minimap").
+var _camera_rig: Node3D
+var _camera: Camera3D
+
 
 ## Called once by World so world-space positions map onto this control's
 ## rect correctly, whatever the actual map size is.
@@ -57,24 +67,46 @@ func set_fog_source(texture: ImageTexture, fog_half_size: float) -> void:
 	fog_texture = texture
 	_fog_world_half_size = fog_half_size
 
+## Called once by World -- see _camera_rig/_camera above.
+func set_camera(camera_rig: Node3D, camera: Camera3D) -> void:
+	_camera_rig = camera_rig
+	_camera = camera
+
+## The world-space point this minimap is currently centered on -- the
+## camera rig's own XZ position once set_camera has run, or the world
+## origin before that (matches this control's pre-camera-follow behavior,
+## for the brief window before World's _ready() finishes wiring it up).
+func _camera_center() -> Vector3:
+	return _camera_rig.position if _camera_rig else Vector3.ZERO
+
 ## Godot per-frame hook: entity positions move every frame regardless of fog
 ## state, so this always redraws (FogManager.process(), called separately
 ## from World._process, is what actually updates fog_texture's pixels).
 func _process(_delta: float) -> void:
 	queue_redraw()
 
-## World-space position -> a local pixel position within this control's rect.
+## World-space position -> a local pixel position within this control's rect,
+## relative to the camera's current center (see _camera_center) rather than
+## the world origin.
 func _world_to_local(world_pos: Vector3) -> Vector2:
-	var nx := (world_pos.x + _world_half_size) / (_world_half_size * 2.0)
-	var nz := (world_pos.z + _world_half_size) / (_world_half_size * 2.0)
+	var center := _camera_center()
+	var nx := (world_pos.x - center.x + _world_half_size) / (_world_half_size * 2.0)
+	var nz := (world_pos.z - center.z + _world_half_size) / (_world_half_size * 2.0)
 	return Vector2(clamp(nx, 0.0, 1.0) * size.x, clamp(nz, 0.0, 1.0) * size.y)
 
 ## Local pixel position within this control's rect -> a world-space position
-## (y always 0.0) -- the exact inverse of _world_to_local.
+## (y always 0.0) -- the exact inverse of _world_to_local, so a click still
+## resolves to the right world point regardless of where the camera has
+## panned the minimap's own view to.
 func _local_to_world(local_pos: Vector2) -> Vector3:
+	var center := _camera_center()
 	var nx := local_pos.x / size.x
 	var nz := local_pos.y / size.y
-	return Vector3(nx * _world_half_size * 2.0 - _world_half_size, 0.0, nz * _world_half_size * 2.0 - _world_half_size)
+	return Vector3(
+		nx * _world_half_size * 2.0 - _world_half_size + center.x,
+		0.0,
+		nz * _world_half_size * 2.0 - _world_half_size + center.z
+	)
 
 ## Godot input hook (Control-specific -- only fires for events actually
 ## inside this control's rect): a left click re-centers the camera on the
@@ -101,10 +133,50 @@ func _draw() -> void:
 			draw_circle(_world_to_local(n.global_position), 2.5, DOT_BLOB)
 	if fog_texture:
 		# UV span of this minimap's own (smaller) world_half_size within
-		# the fog texture's (larger) own -- see _fog_world_half_size.
-		var uv_min: float = (_fog_world_half_size - _world_half_size) / (2.0 * _fog_world_half_size)
-		var uv_max: float = (_fog_world_half_size + _world_half_size) / (2.0 * _fog_world_half_size)
+		# the fog texture's (larger) own -- see _fog_world_half_size. Offset
+		# by the camera's current center (not just the origin-centered span
+		# the fixed-view minimap used to need) now that this minimap follows
+		# the camera around the map; clamped since the camera can pan right
+		# up to the fog texture's own edge.
+		var center := _camera_center()
+		var uv_min := Vector2(
+			(_fog_world_half_size + center.x - _world_half_size) / (2.0 * _fog_world_half_size),
+			(_fog_world_half_size + center.z - _world_half_size) / (2.0 * _fog_world_half_size)
+		).clamp(Vector2.ZERO, Vector2.ONE)
+		var uv_max := Vector2(
+			(_fog_world_half_size + center.x + _world_half_size) / (2.0 * _fog_world_half_size),
+			(_fog_world_half_size + center.z + _world_half_size) / (2.0 * _fog_world_half_size)
+		).clamp(Vector2.ZERO, Vector2.ONE)
 		var tex_size := Vector2(fog_texture.get_size())
-		var source := Rect2(Vector2(uv_min, uv_min) * tex_size, Vector2(uv_max - uv_min, uv_max - uv_min) * tex_size)
+		var source := Rect2(uv_min * tex_size, (uv_max - uv_min) * tex_size)
 		draw_texture_rect_region(fog_texture, Rect2(Vector2.ZERO, size), source)
+	_draw_camera_square()
 	draw_rect(Rect2(Vector2.ZERO, size), BORDER_COLOR, false, 2.0)
+
+## Outlines the camera's current view footprint on the minimap: the 4
+## corners of the actual 3D viewport, each projected onto the ground plane
+## and mapped through the same _world_to_local the entity dots use, so it
+## accurately reflects panning/zooming/rotation rather than being a fixed-
+## size box (see feature backlog: "camera square should be visible on the
+## minimap").
+func _draw_camera_square() -> void:
+	if _camera == null:
+		return
+	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
+	var corners := [Vector2.ZERO, Vector2(viewport_size.x, 0.0), viewport_size, Vector2(0.0, viewport_size.y)]
+	var points := PackedVector2Array()
+	for corner in corners:
+		points.append(_world_to_local(_project_to_ground(corner)))
+	points.append(points[0])
+	draw_polyline(points, CAMERA_SQUARE_COLOR, 1.5)
+
+## Ray/plane intersection of the camera's view ray through `screen_pos` with
+## the y=0 ground plane -- plain geometry rather than a physics raycast
+## (Minimap has no World reference to query one through), which is fine
+## since CameraRig's tilt never changes, only its position/zoom/yaw.
+func _project_to_ground(screen_pos: Vector2) -> Vector3:
+	var from := _camera.project_ray_origin(screen_pos)
+	var dir := _camera.project_ray_normal(screen_pos)
+	if absf(dir.y) < 0.0001:
+		return from
+	return from + dir * (-from.y / dir.y)

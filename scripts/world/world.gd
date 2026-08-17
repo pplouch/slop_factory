@@ -84,6 +84,7 @@ var _fog_manager := FogManager.new()
 ## buildings, UI) already exists as scene children.
 func _ready() -> void:
 	minimap.set_world_bounds(MINIMAP_HALF_SIZE)
+	minimap.set_camera(camera_rig, camera)
 
 	_chunk_manager.setup(self)
 	_pathing_manager.setup()

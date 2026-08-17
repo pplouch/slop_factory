@@ -42,6 +42,13 @@ const MAX_PANEL_SIZE_FRACTION := Vector2(0.5, 0.6)
 ## Panel's stylebox padding, so it's added back in here.
 const PANEL_PADDING := Vector2(30.0, 24.0)
 const PANEL_MARGIN := 16.0
+## Must mirror Minimap's own scene layout (minimap.tscn's Display control
+## sets offset_left = -196, a 180px box plus a 16px margin from the screen
+## edge) so this panel's right edge stops just short of the minimap instead
+## of sitting at the opposite (bottom-left) corner, where it used to overlap
+## the Build Mode/Tech Tree toggle buttons (see feature backlog: "Unit info
+## UI should be placed next to the minimap").
+const MINIMAP_RESERVED_WIDTH := 196.0
 ## Must match World.EQUIP_COST -- duplicated here only for button-label/
 ## affordability display, World is what actually spends the wood.
 const EQUIP_COST := 10
@@ -266,14 +273,14 @@ func _refresh_live_fields() -> void:
 
 ## Recomputes the panel's size from its current content (rather than the
 ## fixed box the .tscn used to hardcode) and repositions it so its bottom-
-## left corner stays pinned to the same screen margin regardless of size --
+## right corner stays pinned just left of the minimap regardless of size --
 ## capped at MAX_PANEL_SIZE_FRACTION of the viewport, with the existing
 ## ScrollContainer taking over for whatever doesn't fit (e.g. many kinds
 ## selected at once). The actual clamp math is shared with BuildingMenu via
 ## PanelAutofit (see scripts/core/panel_autofit.gd); only the natural-size
 ## computation (summed across several sub-containers, since this panel has
-## no single VBox the way BuildingMenu does) and the final bottom-left-
-## pinned `position` below are specific to this panel.
+## no single VBox the way BuildingMenu does) and the final position below
+## are specific to this panel.
 func _fit_to_content() -> void:
 	var boxes_natural: Vector2 = boxes_container.get_combined_minimum_size()
 	var orders_natural: Vector2 = orders_row.get_combined_minimum_size()
@@ -288,4 +295,7 @@ func _fit_to_content() -> void:
 	var target := PanelAutofit.resolve_size(natural, MIN_PANEL_SIZE, MAX_PANEL_SIZE_FRACTION, viewport_size)
 	panel.custom_minimum_size = target
 	panel.size = target
-	panel.position = Vector2(PANEL_MARGIN, viewport_size.y - PANEL_MARGIN - target.y)
+	panel.position = Vector2(
+		viewport_size.x - MINIMAP_RESERVED_WIDTH - PANEL_MARGIN - target.x,
+		viewport_size.y - PANEL_MARGIN - target.y
+	)

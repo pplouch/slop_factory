@@ -224,31 +224,46 @@ func _clear_water_extractor_range_indicators() -> void:
 			indicator.queue_free()
 	_water_extractor_range_indicators.clear()
 
+## Kinds whose ports rotate with the build-mode ghost's `facing` (their own
+## script exposes a `facing` field BuildingManager.try_place_structure's
+## "facing" in node duck-type already assigns and rotates via look_at) --
+## checked ahead of the generic BuildingKinds.input_ports/output_ports
+## branch below, which is for kinds whose ports are instead fixed world-
+## relative offsets that never rotate (Town Hall/StorageDepot/WaterTank).
+## Foundry joined this set after previously (incorrectly) falling through
+## to the fixed-offset branch via its own now-unused BuildingKinds ports
+## entry, which is why its ports never actually turned with 'R' in build
+## mode despite looking identical to Processor (see feature backlog: "when
+## in build mode, I can't turn buildings like foundry").
+const ROTATING_PORT_KINDS := ["extractor", "processor", "foundry"]
+
 ## Rebuilds the port-direction arrows for whatever's currently selected,
 ## anchored at the ghost's current cell: one per BuildingKinds input/output
 ## port for a kind that has fixed ports (Town Hall/StorageDepot/WaterTank),
-## or a single output arrow (Extractor) / input+output pair (Processor) for
-## the two factory pieces whose single `facing` direction is genuinely
-## unambiguous. Belt is deliberately excluded -- its fair multi-side input
-## (see LinkableBuilding._resolve_fair_input) means "the" input side isn't a
-## single direction, and a single arrow would misrepresent that; Wall/Pipe
-## have no ports at all. Called on every ghost move (cheap: at most 2-4
-## small meshes) rather than only on kind change, so the arrows also track
-## the ghost sliding to a new cell.
+## or a single output arrow (Extractor) / input+output pair (Processor/
+## Foundry) for the ROTATING_PORT_KINDS whose single `facing` direction is
+## genuinely unambiguous. Belt is deliberately excluded -- its fair multi-
+## side input (see LinkableBuilding._resolve_fair_input) means "the" input
+## side isn't a single direction, and a single arrow would misrepresent
+## that; Wall/Pipe have no ports at all. Called on every ghost move (cheap:
+## at most 2-4 small meshes) rather than only on kind change, so the arrows
+## also track the ghost sliding to a new cell.
 func _refresh_port_indicators() -> void:
 	_clear_port_indicators()
 	var anchor := grid_to_world(_build_ghost_cell)
+	if _build_selected_kind == "extractor":
+		_spawn_port_arrow(anchor, _build_facing, true)
+		return
+	if _build_selected_kind in ROTATING_PORT_KINDS:
+		_spawn_port_arrow(anchor, _build_facing, true)
+		_spawn_port_arrow(anchor, -_build_facing, false)
+		return
 	var kind = BuildingKinds.get_kind(_build_selected_kind)
 	if kind and (not kind.input_ports.is_empty() or not kind.output_ports.is_empty()):
 		for offset in kind.input_ports:
 			_spawn_port_arrow(anchor, offset, false)
 		for offset in kind.output_ports:
 			_spawn_port_arrow(anchor, offset, true)
-	elif _build_selected_kind == "extractor":
-		_spawn_port_arrow(anchor, _build_facing, true)
-	elif _build_selected_kind == "processor":
-		_spawn_port_arrow(anchor, _build_facing, true)
-		_spawn_port_arrow(anchor, -_build_facing, false)
 
 ## Spawns one translucent arrow at the cell boundary between `anchor` and
 ## its neighbor in grid direction `offset`, pointing toward the neighbor

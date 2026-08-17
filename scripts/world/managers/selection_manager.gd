@@ -98,6 +98,34 @@ func handle_box_select(a: Vector2, b: Vector2, additive: bool) -> void:
 			select_blob(blob)
 	selection_changed()
 
+## Handles a double-click landing on a blob: selects every blob of that same
+## kind currently visible on screen instead of just the one clicked -- the
+## common RTS convention for quickly grabbing "all my archers" at a glance
+## (see feature backlog: "double click on a unit selects all the units of
+## the same type on the screen"). Reuses handle_box_select's own "is this
+## blob's projected position actually in front of the camera" guard so a
+## same-kind blob behind the camera (which would otherwise project to a
+## bogus screen point) isn't swept in. A double-click that doesn't land on a
+## blob at all is a no-op -- it never reaches this method, see
+## handle_left_button.
+func _handle_double_click(pos: Vector2) -> void:
+	var hit: Dictionary = _world.raycast(pos, MASK_BLOBS)
+	if not hit or not hit.collider.is_in_group("blobs"):
+		return
+	var kind_id: String = hit.collider.kind_id
+	clear_selection()
+	var viewport_rect := Rect2(Vector2.ZERO, _world.get_viewport().get_visible_rect().size)
+	for blob in _world.get_tree().get_nodes_in_group("blobs"):
+		if blob.kind_id != kind_id:
+			continue
+		var to_blob: Vector3 = blob.global_position - _world.camera.global_position
+		if _world.camera.global_transform.basis.z.dot(to_blob) > 0.0:
+			continue
+		var screen_pos: Vector2 = _world.camera.unproject_position(blob.global_position)
+		if viewport_rect.has_point(screen_pos):
+			select_blob(blob)
+	selection_changed()
+
 ## Updates which blob (if any) is under the mouse cursor and toggles its
 ## hover highlight, clearing the previous hover target first. Only called
 ## while the player isn't drag-selecting.
@@ -150,6 +178,9 @@ func selection_changed() -> void:
 ## _unhandled_input for InputEventMouseButton events on MOUSE_BUTTON_LEFT.
 func handle_left_button(event: InputEventMouseButton) -> void:
 	if event.pressed:
+		if event.double_click:
+			_handle_double_click(event.position)
+			return
 		_dragging = true
 		_drag_start = event.position
 	else:
