@@ -62,6 +62,22 @@ var _build_ghost: Node3D = null
 var _build_ghost_material: StandardMaterial3D = null
 var _build_ghost_cell := Vector2i.ZERO
 
+# Kinds where holding the mouse button and dragging places a whole line at
+# once instead of one click per cell -- LinkableBuilding entries only (see
+# scripts/core/linkable_building.gd): a repeated line piece like a fence or
+# conveyor run is exactly what a drag gesture is for, unlike a one-off
+# building like Town Hall. A short explicit list rather than a derived
+# "is LinkableBuilding" check, since checking the type would mean
+# instantiating the scene just to ask.
+const DRAG_PLACE_KINDS := ["wall", "belt", "pipe"]
+
+var _dragging_place := false
+## The most recently *drag*-placed cell (not necessarily the ghost's current
+## cell) -- compared against the ghost's cell each mouse-motion event to
+## detect "moved to a new cell" and, for Belt, to derive which direction the
+## new segment should face (see _try_drag_place).
+var _drag_last_cell := Vector2i.ZERO
+
 # Translucent discs shown over every resource node while "extractor" is the
 # selected build kind, so the player can see valid linking range at a glance
 # instead of guessing and getting an invalid-placement red ghost.
@@ -122,6 +138,7 @@ func toggle_build_mode() -> void:
 		_clear_extractor_range_indicators()
 		_clear_water_extractor_range_indicators()
 		_clear_port_indicators()
+		_dragging_place = false
 
 ## Signal handler for BuildPalette.kind_selected: switches which structure
 ## the next placement will be.
@@ -260,23 +277,57 @@ func _clear_port_indicators() -> void:
 	_port_indicators.clear()
 
 ## Routes all input while build mode is active: mouse movement re-positions
-## the ghost, left click places whatever's selected in the palette, right
-## click demolishes whatever structure is under the ghost cell (regardless
-## of which kind is currently selected for placement), 'R' rotates the ghost
-## 90 degrees, and Escape exits build mode entirely.
+## the ghost (and, if a drag-place is in progress, tries to extend it into
+## the newly-entered cell), left click places whatever's selected in the
+## palette (and starts a drag-place for DRAG_PLACE_KINDS), releasing left
+## ends any drag-place in progress, right click demolishes whatever
+## structure is under the ghost cell (regardless of which kind is currently
+## selected for placement), 'R' rotates the ghost 90 degrees, and Escape
+## exits build mode entirely.
 func handle_build_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		_update_ghost_position(event.position)
-	elif event is InputEventMouseButton and event.pressed:
+		if _dragging_place:
+			_try_drag_place()
+	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			try_place_structure()
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			if event.pressed:
+				try_place_structure()
+				_dragging_place = _build_selected_kind in DRAG_PLACE_KINDS
+				_drag_last_cell = _build_ghost_cell
+			else:
+				_dragging_place = false
+		elif event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
 			demolish_at(_build_ghost_cell)
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_R:
 			_rotate_ghost()
 		elif event.keycode == KEY_ESCAPE:
 			toggle_build_mode()
+
+## Called on every mouse-motion event while a drag-place is in progress (see
+## handle_build_input): does nothing until the ghost has actually reached a
+## new cell (so holding still mid-drag doesn't spam placements), then --
+## for Belt specifically -- re-faces the upcoming segment toward the
+## direction just traveled from the last-placed cell, so a dragged line
+## curves to follow the mouse path instead of every segment keeping
+## whatever facing was picked before the drag started, before attempting
+## the actual placement. Silently does nothing at cells that aren't valid
+## (occupied, unaffordable, ...), same as a single click would.
+func _try_drag_place() -> void:
+	if _build_ghost_cell == _drag_last_cell:
+		return
+	if _build_selected_kind == "belt":
+		var delta := _build_ghost_cell - _drag_last_cell
+		if delta.x != 0:
+			_build_facing = Vector2i(signi(delta.x), 0)
+		elif delta.y != 0:
+			_build_facing = Vector2i(0, signi(delta.y))
+		if _build_ghost:
+			_build_ghost.look_at(_build_ghost.global_position + Vector3(_build_facing.x, 0.0, _build_facing.y), Vector3.UP)
+		_refresh_port_indicators()
+	try_place_structure()
+	_drag_last_cell = _build_ghost_cell
 
 ## Moves the ghost preview to the grid cell under the mouse (raycast against
 ## the ground plane), creating it on first use, and refreshes whether that
