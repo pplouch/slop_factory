@@ -79,6 +79,17 @@ func _reveal_at(world_pos: Vector3) -> void:
 				_fog_image.set_pixel(x, y, Color(0.0, 0.0, 0.0, 0.0))
 				_fog_dirty = true
 
+## Whether `world_pos` has already been revealed, or falls entirely outside
+## this manager's tracked coverage (see world_half_size) where nothing is
+## fogged in the first place -- used by BuildingManager to block placing
+## structures somewhere the player hasn't actually seen yet (see feature
+## backlog: "Player should not be able to build in the fog of war").
+func is_revealed(world_pos: Vector3) -> bool:
+	if absf(world_pos.x) > world_half_size or absf(world_pos.z) > world_half_size:
+		return true
+	var cell := world_to_fog_cell(world_pos)
+	return _fog_image.get_pixel(cell.x, cell.y).a <= 0.0
+
 ## World-space position -> the fog grid cell it falls within. Public since
 ## it defines the exact (world_x, world_z) -> (0..1, 0..1) convention
 ## _build_fog_plane's hand-authored UVs must match to line the 3D mask up

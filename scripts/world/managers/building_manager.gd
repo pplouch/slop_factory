@@ -54,6 +54,7 @@ var _grid_structures: Dictionary = {}
 
 var _world: Node3D
 var _pathing: PathingManager
+var _fog: FogManager
 
 var _build_mode_active := false
 var _build_selected_kind := "belt"
@@ -97,9 +98,10 @@ var _port_indicators: Array = []
 var _water_extractor_range_indicators: Array = []
 
 
-func setup(world: Node3D, pathing: PathingManager) -> void:
+func setup(world: Node3D, pathing: PathingManager, fog: FogManager) -> void:
 	_world = world
 	_pathing = pathing
+	_fog = fog
 
 func is_build_mode_active() -> bool:
 	return _build_mode_active
@@ -410,11 +412,21 @@ func is_placement_valid(cell: Vector2i) -> bool:
 
 	if get_structure_at(cell) != null:
 		return false
+
+	var world_pos := grid_to_world(cell)
+	# Can't build somewhere the player hasn't actually seen yet -- applies
+	# to every kind uniformly, checked before any kind-specific rule below.
+	if not _fog.is_revealed(world_pos):
+		return false
+
 	if _build_selected_kind == "extractor":
-		return _find_resource_node_near(grid_to_world(cell)) != null
+		return _find_resource_node_near(world_pos) != null
 	if _build_selected_kind == "water_extractor":
-		var world_pos := grid_to_world(cell)
 		return Biomes.is_water_at(world_pos.x, world_pos.z)
+	# Every other kind is a land structure -- Water Extractor above is the
+	# one deliberate exception that *requires* water instead of forbidding it.
+	if Biomes.is_water_at(world_pos.x, world_pos.z):
+		return false
 	return true
 
 ## Every grid cell `kind_id` occupies if placed with its anchor at `anchor`

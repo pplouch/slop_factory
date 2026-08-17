@@ -2,9 +2,12 @@ class_name BeltSegment
 extends LinkableBuilding
 ## One grid-cell conveyor segment: carries at most one ResourceItem at a
 ## time from its back edge to its front edge (in `facing` direction), then
-## pushes it onward to whatever sits in the next grid cell -- another belt,
-## a Processor's input, or (if that cell is empty) straight into
-## GameManager's stockpile, since there's nowhere further to send it.
+## pushes it onward to whatever sits in the next grid cell -- another belt
+## or a Processor's input. If the next cell is empty, or occupied by
+## something that won't accept it right now, the item just waits at the
+## front edge (see _try_advance_item) rather than being auto-collected or
+## destroyed -- a belt run only ever delivers by actually reaching a
+## building that wants it.
 ##
 ## A BuildingKinds entry like Town Hall/StorageDepot/WaterTank (tech-tree
 ## gated, requires blob construction labor before it can carry anything)
@@ -195,26 +198,20 @@ func try_receive_input(item: Node3D, from_direction: Vector2i = Vector2i.ZERO) -
 	return true
 
 ## Called once the held item reaches this belt's far edge: hands it to
-## whatever occupies the next grid cell in `facing` direction, or -- if
-## that cell is empty -- delivers it straight to the stockpile (the belt
-## line has nowhere further to go, so this doubles as "the end of the
-## line auto-collects"). If the next cell is occupied but can't accept it
-## right now (e.g. another belt already holding an item), the item simply
-## waits at the front edge until it can move on.
+## whatever occupies the next grid cell in `facing` direction. If that cell
+## is empty, or occupied but can't accept it right now (e.g. another belt
+## already holding an item, or a structure with no try_receive_input at
+## all), the item simply waits at the front edge until something is
+## actually there to take it -- an unlinked or blocked belt output holds
+## its item rather than silently destroying it or auto-collecting it into
+## the stockpile (see feature backlog: "resources should be stuck, not
+## destroyed").
 func _try_advance_item() -> void:
 	var world = get_parent()
 	var my_cell: Vector2i = world.world_to_grid(global_position)
 	var next_structure: Node = world.get_structure_at(my_cell + facing)
-
 	if next_structure == null:
-		var item := current_item
-		GameManager.add_resource(item.resource_type, item.amount)
-		Effects.spawn_impact(world, item.global_position + Vector3(0.0, 0.3, 0.0), Effects.resource_color(item.resource_type), 4)
-		item.queue_free()
-		current_item = null
-		_progress = 0.0
 		return
-
 	if next_structure.has_method("try_receive_input") and next_structure.try_receive_input(current_item, facing):
 		current_item = null
 		_progress = 0.0

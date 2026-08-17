@@ -76,7 +76,7 @@ func _ready() -> void:
 
 	_chunk_manager.setup(self)
 	_pathing_manager.setup()
-	_building_manager.setup(self, _pathing_manager)
+	_building_manager.setup(self, _pathing_manager, _fog_manager)
 	_spawn_manager.setup(self, _chunk_manager)
 	_selection_manager.setup(self)
 	_order_manager.setup(self, _selection_manager)
