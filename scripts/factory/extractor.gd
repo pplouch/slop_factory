@@ -79,10 +79,19 @@ func _on_extract_timer_timeout() -> void:
 		item.queue_free()
 
 ## Whether `structure` (already confirmed to be a valid try_receive_input
-## target) actually has room right now -- duck-typed against `current_item`
-## (BeltSegment's single-slot field) since that's the one receiver kind
-## that can stay full indefinitely; anything without that field (a
-## multi-slot buffer like StorageDepot, or no field at all) is assumed
-## free and left to its own try_receive_input to reject if it disagrees.
+## target) actually has room right now -- false while it's still under
+## construction (a freshly-placed BeltSegment starts this way and
+## unconditionally rejects try_receive_input until a blob finishes building
+## it, per BuildableStructure; without this check harvesting would proceed
+## straight into that guaranteed rejection every tick, draining the resource
+## node into destroyed items the whole time the belt is being built -- see
+## feature backlog: "resources on the belt are invisible"), or duck-typed
+## against `current_item` (BeltSegment's single-slot field) otherwise, since
+## that's the one receiver kind that can stay full indefinitely; anything
+## without that field (a multi-slot buffer like StorageDepot, or no field at
+## all) is assumed free and left to its own try_receive_input to reject if
+## it disagrees.
 func _output_is_free(structure: Node) -> bool:
+	if "is_under_construction" in structure and structure.is_under_construction:
+		return false
 	return not ("current_item" in structure and structure.current_item != null)

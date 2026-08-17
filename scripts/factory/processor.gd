@@ -70,15 +70,21 @@ func _process(delta: float) -> void:
 
 ## Whether the structure (if any) in this processor's output cell has room
 ## right now -- true if the cell is empty (nothing to wait on, _finish_batch
-## auto-collects) or holds something without a single-slot `current_item`
-## field; false only when it's specifically a BeltSegment already holding
-## an item, the one receiver kind that can stay full indefinitely.
+## auto-collects); false while that structure is still under construction (a
+## freshly-placed BeltSegment unconditionally rejects try_receive_input until
+## a blob finishes building it -- without this check a batch would "finish"
+## straight into that guaranteed rejection and fall back to the stockpile,
+## never once visibly riding the belt even after it's done) or, once built,
+## only when it's specifically a BeltSegment already holding an item, the one
+## receiver kind that can stay full indefinitely.
 func _output_is_free() -> bool:
 	var world = get_parent()
 	var my_cell: Vector2i = world.world_to_grid(global_position)
 	var output_structure: Node = world.get_structure_at(my_cell + facing)
 	if output_structure == null:
 		return true
+	if "is_under_construction" in output_structure and output_structure.is_under_construction:
+		return false
 	return not ("current_item" in output_structure and output_structure.current_item != null)
 
 ## Accepts `item` into the input buffer if it's the recipe's input type and
