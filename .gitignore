@@ -4,3 +4,4 @@
 
 # gdUnit4 test-run reports (regenerated every run, not source)
 /reports/
+.vscode/
