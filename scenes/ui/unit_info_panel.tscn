@@ -75,9 +75,9 @@ autowrap_mode = 2
 [node name="EquipWeaponButton" type="Button" parent="Panel/OuterVBox/EquipRow"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
-text = "Equip Weapon (10w)"
+text = "Weapon (10w)"
 
 [node name="EquipBucketButton" type="Button" parent="Panel/OuterVBox/EquipRow"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
-text = "Equip Bucket (10w)"
+text = "Bucket (10w)"

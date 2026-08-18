@@ -41,6 +41,7 @@ extends LinkableBuilding
 ## one level into its own instanced scene for the actual MeshInstance3D
 ## _apply_construction_visual needs to rise/reposition, which composes fine
 ## on top of PostModel's own separate scale regardless.
+@onready var _post_model: Node3D = $PostModel
 @onready var _post_mesh: MeshInstance3D = $PostModel/wall
 @onready var _post_base_position: Vector3 = _post_mesh.position
 
@@ -77,3 +78,13 @@ func _links_to(neighbor: Node) -> bool:
 ## directions -- no local-axis remap needed the way BeltSegment needs.
 func _set_connector_visible(key: String, is_visible: bool) -> void:
 	_connectors[key].visible = is_visible
+
+## Template Method hook (see LinkableBuilding._update_mesh_orientation's own
+## header on why this is needed at all): PostModel's real mesh defaults to
+## a wide face along local Z -- rotated 90 degrees whenever this Wall
+## connects along X but not Z, so an east-west run reads as a continuous
+## panel instead of a row of sideways pickets. An isolated post or one only
+## connecting along Z (including an ambiguous corner connecting both) keeps
+## the mesh's own default orientation.
+func _update_mesh_orientation(connected_x: bool, connected_z: bool) -> void:
+	_post_model.rotation.y = PI / 2.0 if (connected_x and not connected_z) else 0.0

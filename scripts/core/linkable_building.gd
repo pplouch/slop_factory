@@ -32,20 +32,30 @@ func _emits_ambient_light() -> bool:
 
 
 ## Re-checks all 4 neighboring grid cells and updates which connector/rail
-## is shown toward each, via the two hooks below. Called by World once this
-## structure's own placement is finalized and again whenever a structure is
-## placed/demolished next to it (see World._refresh_neighbor_visuals) --
-## not from this node's own _ready(), since _ready() fires synchronously
-## during World's add_child(), before World has set this structure's real
-## global_position/rotation.
+## is shown toward each, via the two hooks below, then reports which axes
+## actually connected to a third hook (see _update_mesh_orientation's own
+## header for why). Called by World once this structure's own placement is
+## finalized and again whenever a structure is placed/demolished next to it
+## (see World._refresh_neighbor_visuals) -- not from this node's own
+## _ready(), since _ready() fires synchronously during World's add_child(),
+## before World has set this structure's real global_position/rotation.
 func refresh_connections() -> void:
 	var world = get_parent()
 	if world == null:
 		return
 	var my_cell: Vector2i = world.world_to_grid(global_position)
+	var connected_x := false
+	var connected_z := false
 	for key in GridDirections.CARDINAL_OFFSETS.keys():
 		var neighbor: Node = world.get_structure_at(my_cell + GridDirections.CARDINAL_OFFSETS[key])
-		_set_connector_visible(key, _links_to(neighbor))
+		var connected: bool = _links_to(neighbor)
+		_set_connector_visible(key, connected)
+		if connected:
+			if key == "pos_x" or key == "neg_x":
+				connected_x = true
+			else:
+				connected_z = true
+	_update_mesh_orientation(connected_x, connected_z)
 
 ## Template Method hook: default "any neighbor counts as connected" (Belt's
 ## behavior). Wall overrides this to only count another Wall.
@@ -55,6 +65,18 @@ func _links_to(neighbor: Node) -> bool:
 ## Template Method hook: subclasses show/hide their own connector/rail node
 ## for cardinal `key` ("pos_x"/"neg_x"/"pos_z"/"neg_z").
 func _set_connector_visible(_key: String, _is_visible: bool) -> void:
+	pass
+
+## Template Method hook: a no-op by default (Belt/Road/Pipe's own facing is
+## set once at placement, see BuildingManager.try_place_structure, and never
+## revisited here). Wall/Gate override this -- their real Kenney meshes
+## (see wall.gd/gate.gd's own headers) have a fixed default orientation
+## (wide face along local Z, unlike the roughly-square BoxMesh this
+## replaced, which looked fine from either axis) -- so a straight run along
+## X needs its post mesh actually rotated 90 degrees to read as a
+## continuous panel instead of a row of sideways-looking pickets (see
+## feature request: "the walls and gates are sideways").
+func _update_mesh_orientation(_connected_x: bool, _connected_z: bool) -> void:
 	pass
 
 

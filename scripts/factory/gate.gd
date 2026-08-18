@@ -34,6 +34,7 @@ extends LinkableBuilding
 ## wall.gd's own header on why its bundled flat-color trim-sheet texture is
 ## overridden with our own tuned StandardMaterial3D instead of used as-is).
 
+@onready var _post_model: Node3D = $PostModel
 @onready var _post_mesh: MeshInstance3D = $"PostModel/wall-doorway"
 @onready var _post_base_position: Vector3 = _post_mesh.position
 
@@ -76,3 +77,9 @@ func _links_to(neighbor: Node) -> bool:
 ## directions -- no local-axis remap needed the way BeltSegment needs.
 func _set_connector_visible(key: String, is_visible: bool) -> void:
 	_connectors[key].visible = is_visible
+
+## Template Method hook -- same fix and same reasoning as Wall's own
+## override (see that file's own header): wall-doorway.fbx ships with the
+## identical default orientation (wide face along local Z) as wall.fbx.
+func _update_mesh_orientation(connected_x: bool, connected_z: bool) -> void:
+	_post_model.rotation.y = PI / 2.0 if (connected_x and not connected_z) else 0.0

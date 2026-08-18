@@ -36,7 +36,15 @@ const HEALTHY_COLOR := Color(0.3, 0.9, 0.35)
 const HURT_COLOR := Color(0.9, 0.2, 0.2)
 
 const MIN_PANEL_SIZE := Vector2(240.0, 90.0)
-const MAX_PANEL_SIZE_FRACTION := Vector2(0.5, 0.6)
+## Was (0.5, 0.6) -- half the screen wide and 60% of it tall, which a
+## mixed-kind selection (several BlobKinds at once, each getting its own
+## full box) would actually hit, covering most of the game view (see
+## feature request: "the unit UI panel is way too big"). The existing
+## ScrollContainer around boxes_container already exists specifically to
+## handle "more kinds than comfortably fit" -- this just makes that the
+## normal case for a big mixed selection instead of the panel ballooning up
+## to nearly the whole screen first.
+const MAX_PANEL_SIZE_FRACTION := Vector2(0.3, 0.35)
 ## StyleBoxFlat_panel's own content margins (see theme/game_theme.tres) --
 ## Control.get_combined_minimum_size() doesn't include an *ancestor*
 ## Panel's stylebox padding, so it's added back in here.
@@ -301,6 +309,14 @@ func _fit_to_content() -> void:
 
 	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
 	var target := PanelAutofit.resolve_size(natural, MIN_PANEL_SIZE, MAX_PANEL_SIZE_FRACTION, viewport_size)
+	# The orders/equip rows' own buttons have a real minimum width (their
+	# text) that must never be compressed below, unlike boxes_container
+	# (which already has its own ScrollContainer for exactly this "more
+	# kinds than comfortably fit" case) -- otherwise a big mixed selection
+	# could shrink the panel's width down to MAX_PANEL_SIZE_FRACTION and
+	# clip the Patrol/Hold/Explore/Equip buttons themselves.
+	target.x = maxf(target.x, orders_natural.x + PANEL_PADDING.x)
+	target.x = maxf(target.x, equip_natural.x + PANEL_PADDING.x)
 	panel.custom_minimum_size = target
 	panel.size = target
 	panel.position = Vector2(
