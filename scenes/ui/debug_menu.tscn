@@ -23,10 +23,10 @@ anchor_left = 1.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 0.0
-offset_left = -220.0
+offset_left = -300.0
 offset_top = 64.0
 offset_right = -16.0
-offset_bottom = 278.0
+offset_bottom = 460.0
 theme = ExtResource("2")
 
 [node name="VBox" type="VBoxContainer" parent="Panel"]
@@ -41,9 +41,41 @@ text = "Generate Blob"
 layout_mode = 2
 text = "Generate Enemy"
 
+[node name="SpawnEnemiesNearBaseButton" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "Spawn Enemies Near Base"
+
 [node name="AddResourcesButton" type="Button" parent="Panel/VBox"]
 layout_mode = 2
-text = "Add Resources (+100)"
+text = "Add Resources (+500 All)"
+
+[node name="ClearFogButton" type="Button" parent="Panel/VBox"]
+layout_mode = 2
+text = "Clear Fog"
+
+[node name="TimeRow" type="HBoxContainer" parent="Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="DawnButton" type="Button" parent="Panel/VBox/TimeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Dawn"
+
+[node name="NoonButton" type="Button" parent="Panel/VBox/TimeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Noon"
+
+[node name="DuskButton" type="Button" parent="Panel/VBox/TimeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Dusk"
+
+[node name="MidnightButton" type="Button" parent="Panel/VBox/TimeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Night"
 
 [node name="ToggleHitboxesButton" type="Button" parent="Panel/VBox"]
 layout_mode = 2

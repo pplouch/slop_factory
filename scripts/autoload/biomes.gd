@@ -82,6 +82,10 @@ var humidity_noise := FastNoiseLite.new()
 ## Rare hotspots (thresholded, see is_volcanic_at) checked before the
 ## temperature/humidity grid -- volcanic activity doesn't follow climate.
 var volcanic_noise := FastNoiseLite.new()
+## Broad, slow-varying field blended into difficulty_at alongside raw
+## distance from the origin -- see that function's own header for why a
+## noise layer is mixed in rather than using pure distance alone.
+var difficulty_noise := FastNoiseLite.new()
 ## Rivers: winding line-like features wherever this noise crosses zero
 ## (see is_river_at) -- a classic "ridged" trick that needs no pathing/
 ## graph-connectivity work and is naturally continuous across chunks since
@@ -136,6 +140,30 @@ const WATER_SAFE_RADIUS := 12.0
 ## "not well used" system that removal targeted.
 const WATER_BASIN_DEPTH := 1.0
 
+## -- Smooth biome-color blending (see feature request: "the transition
+## between biomes is brutal, doesn't feel organic") -- Chunk/resource/enemy
+## population still use the coarse, single-biome-per-chunk classification
+## above (biome_for_world_pos); blending *which* resources/enemies spawn
+## continuously would be a much bigger change than what was actually
+## reported, a purely visual complaint about ground color snapping at a
+## chunk's hard edge. blended_ground_color_at instead gives the ground's
+## own color a continuous, softened version of the exact same
+## classification tree, so it eases across a boundary over a real physical
+## distance instead of snapping the instant one chunk's single center-point
+## sample crosses a threshold.
+const BIOME_BLEND_BAND := 0.06
+const PLAINS_BLEND_BAND := 12.0
+const VOLCANIC_BLEND_BAND := 0.08
+
+## -- Difficulty-by-distance noise layer (see feature request: "the farther
+## the biome is, the rarer the resources and the harder the enemies") --
+## blends raw distance from the origin with a broad noise field so the
+## increase isn't a perfectly circular ring (which would read as
+## artificial) while still correlating strongly with "farther = harder".
+const DIFFICULTY_MAX_DISTANCE := 1500.0
+const MAX_ENEMY_DIFFICULTY_MULT := 2.5
+const MIN_RESOURCE_ABUNDANCE_MULT := 0.35
+
 
 func _ready() -> void:
 	temperature_noise.seed = 2000
@@ -158,6 +186,10 @@ func _ready() -> void:
 	lake_noise.seed = 6000
 	lake_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	lake_noise.frequency = 0.006
+
+	difficulty_noise.seed = 7000
+	difficulty_noise.noise_type = FastNoiseLite.TYPE_PERLIN
+	difficulty_noise.frequency = 0.0015
 
 	_register(Biome.new("plains", "Plains", Color(0.29, 0.56, 0.24),
 		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": IRON_ORE_SCENE, "resource_type": "iron"}],
@@ -305,3 +337,107 @@ func water_tint_at(world_x: float, world_z: float) -> Color:
 ## the temperature/humidity climate grid.
 func is_volcanic_at(world_x: float, world_z: float) -> bool:
 	return volcanic_noise.get_noise_2d(world_x, world_z) > VOLCANIC_THRESHOLD
+
+## Smoothly-blended ground color at `world_x`/`world_z` -- see this file's
+## own header on BIOME_BLEND_BAND for why this exists alongside the hard
+## biome_for_world_pos classification rather than replacing it. Read
+## per-vertex by Chunk._build_ground_mesh: vertex colors interpolate
+## smoothly across a mesh (and agree exactly at a shared border with a
+## neighboring chunk's own mesh, since both sample this same continuous
+## function), unlike a chunk's own procedural texture, which tiles *within*
+## one chunk and so can never carry a whole-chunk-spanning gradient.
+func blended_ground_color_at(world_x: float, world_z: float) -> Color:
+	var dist := Vector2(world_x, world_z).length()
+	var temperature := _remap(temperature_noise.get_noise_2d(world_x, world_z))
+	var humidity := _remap(humidity_noise.get_noise_2d(world_x, world_z))
+	var climate_color := _climate_blend_color(temperature, humidity)
+
+	var volcanic_n := volcanic_noise.get_noise_2d(world_x, world_z)
+	var volcanic_w: float = smoothstep(VOLCANIC_THRESHOLD - VOLCANIC_BLEND_BAND, VOLCANIC_THRESHOLD + VOLCANIC_BLEND_BAND, volcanic_n)
+	var outer_color: Color = climate_color.lerp(get_biome("volcanic").ground_color, volcanic_w)
+
+	var plains_w: float = 1.0 - smoothstep(PLAINS_RADIUS - PLAINS_BLEND_BAND, PLAINS_RADIUS + PLAINS_BLEND_BAND, dist)
+	return outer_color.lerp(get_biome("plains").ground_color, plains_w)
+
+## Softened mirror of biome_for_world_pos's climate if/elif tree -- each
+## weight construction follows the exact same hierarchy (temperature
+## decides cold/mid/hot first, humidity only splits *within* whichever
+## temperature band), so this always resolves to the same dominant color
+## biome_for_world_pos would pick well away from any threshold, and only
+## actually blends between neighbors within BIOME_BLEND_BAND of one.
+func _climate_blend_color(temperature: float, humidity: float) -> Color:
+	var cold_w: float = 1.0 - smoothstep(TEMPERATURE_COLD - BIOME_BLEND_BAND, TEMPERATURE_COLD + BIOME_BLEND_BAND, temperature)
+	var hot_w: float = smoothstep(TEMPERATURE_HOT - BIOME_BLEND_BAND, TEMPERATURE_HOT + BIOME_BLEND_BAND, temperature)
+	var mid_w: float = clamp(1.0 - cold_w - hot_w, 0.0, 1.0)
+
+	var jungle_in_hot: float = smoothstep(0.5 - BIOME_BLEND_BAND, 0.5 + BIOME_BLEND_BAND, humidity)
+	var desert_in_hot: float = 1.0 - jungle_in_hot
+
+	var wet_m: float = smoothstep(HUMIDITY_WET - BIOME_BLEND_BAND, HUMIDITY_WET + BIOME_BLEND_BAND, humidity)
+	var dry_m: float = 1.0 - smoothstep(HUMIDITY_DRY - BIOME_BLEND_BAND, HUMIDITY_DRY + BIOME_BLEND_BAND, humidity)
+	var swamp_m: float = clamp(1.0 - wet_m - dry_m, 0.0, 1.0)
+	var mid_h_total: float = wet_m + dry_m + swamp_m
+	if mid_h_total > 0.0:
+		wet_m /= mid_h_total
+		dry_m /= mid_h_total
+		swamp_m /= mid_h_total
+
+	var color := Color(0.0, 0.0, 0.0)
+	color += get_biome("tundra").ground_color * cold_w
+	color += get_biome("jungle").ground_color * (hot_w * jungle_in_hot)
+	color += get_biome("desert").ground_color * (hot_w * desert_in_hot)
+	color += get_biome("forest").ground_color * (mid_w * wet_m)
+	color += get_biome("plains").ground_color * (mid_w * dry_m)
+	color += get_biome("swamp").ground_color * (mid_w * swamp_m)
+	return color
+
+## 0..1 "how dangerous/scarce should this position be" -- mostly driven by
+## raw distance from the origin, with a broad noise field blended in so
+## equal-distance points aren't perfectly identical (a pure radial ring
+## would read as artificial the same way a hard biome-classification edge
+## did, see blended_ground_color_at's own header for the same reasoning
+## applied to ground color). Saturates at 1.0 past DIFFICULTY_MAX_DISTANCE.
+func difficulty_at(world_x: float, world_z: float) -> float:
+	var dist := Vector2(world_x, world_z).length()
+	var dist_factor: float = clamp(dist / DIFFICULTY_MAX_DISTANCE, 0.0, 1.0)
+	var noise_factor: float = _remap(difficulty_noise.get_noise_2d(world_x, world_z))
+	return clamp(dist_factor * 0.7 + noise_factor * 0.3, 0.0, 1.0)
+
+## Multiplier Enemy should apply on top of GameManager's own time-based
+## ramp (see GameManager.get_enemy_difficulty_multiplier) -- the two stack
+## multiplicatively (time makes the whole map harder as a session goes on;
+## this makes any single moment's difficulty vary by how far out an enemy
+## actually spawned). 1.0 near the origin, rising to MAX_ENEMY_DIFFICULTY_MULT
+## at DIFFICULTY_MAX_DISTANCE and beyond.
+func enemy_difficulty_multiplier_at(world_x: float, world_z: float) -> float:
+	return lerp(1.0, MAX_ENEMY_DIFFICULTY_MULT, difficulty_at(world_x, world_z))
+
+## Multiplier Chunk._scatter_resources should apply to its own
+## RESOURCE_ATTEMPT_CHANCE/cluster counts -- 1.0 near the origin, dropping
+## to MIN_RESOURCE_ABUNDANCE_MULT at DIFFICULTY_MAX_DISTANCE and beyond, so
+## resources read as progressively scarcer the farther out a chunk is.
+func resource_abundance_multiplier_at(world_x: float, world_z: float) -> float:
+	return lerp(1.0, MIN_RESOURCE_ABUNDANCE_MULT, difficulty_at(world_x, world_z))
+
+## 0..1 shoreline-foam intensity at `world_x`/`world_z`, peaking exactly at
+## the river/lake noise threshold water_tint_at itself blends across (a
+## river's RIVER_HALF_WIDTH crossing, a lake's LAKE_THRESHOLD) and fading to
+## 0 within one shore-band's width to either side -- reuses those same
+## thresholds/bands rather than new tuning constants, so the animated foam
+## in scripts/world/ground.gdshader always lines up with the existing
+## sandy-shore/shallow-water tint band instead of drifting from it. Baked
+## into ground-mesh vertex-color alpha by Chunk (see
+## Chunk._build_ground_mesh), since the shader itself has no noise access.
+func shore_factor_at(world_x: float, world_z: float) -> float:
+	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
+		return 0.0
+
+	var river_n := absf(river_noise.get_noise_2d(world_x, world_z))
+	if river_n < RIVER_HALF_WIDTH + RIVER_SHORE_BAND:
+		return clamp(1.0 - absf(river_n - RIVER_HALF_WIDTH) / RIVER_SHORE_BAND, 0.0, 1.0)
+
+	var lake_n := lake_noise.get_noise_2d(world_x, world_z)
+	if lake_n > LAKE_THRESHOLD - LAKE_SHORE_BAND:
+		return clamp(1.0 - absf(lake_n - LAKE_THRESHOLD) / LAKE_SHORE_BAND, 0.0, 1.0)
+
+	return 0.0

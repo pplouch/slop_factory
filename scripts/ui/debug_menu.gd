@@ -9,6 +9,13 @@ signal spawn_enemy_requested
 signal add_resources_requested
 signal toggle_hitboxes_requested
 signal toggle_grid_requested
+## Fired by the "Clear Fog" button -- reveals the entire tracked map at once.
+signal clear_fog_requested
+## Fired by one of the 4 time-of-day buttons; `fraction` is 0..1 (see
+## DayNightManager.time_of_day_fraction/set_time_fraction).
+signal set_time_requested(fraction: float)
+## Fired by "Spawn Enemies Near Base" -- see SpawnManager.spawn_enemies_near_base.
+signal spawn_enemies_near_base_requested
 
 @onready var toggle_button: Button = $ToggleButton
 @onready var panel: PanelContainer = $Panel
@@ -23,7 +30,13 @@ func _ready() -> void:
 	toggle_button.pressed.connect(func(): toggle_requested.emit())
 	$Panel/VBox/SpawnBlobButton.pressed.connect(func(): spawn_blob_requested.emit())
 	$Panel/VBox/SpawnEnemyButton.pressed.connect(func(): spawn_enemy_requested.emit())
+	$Panel/VBox/SpawnEnemiesNearBaseButton.pressed.connect(func(): spawn_enemies_near_base_requested.emit())
 	$Panel/VBox/AddResourcesButton.pressed.connect(func(): add_resources_requested.emit())
+	$Panel/VBox/ClearFogButton.pressed.connect(func(): clear_fog_requested.emit())
+	$Panel/VBox/TimeRow/DawnButton.pressed.connect(func(): set_time_requested.emit(0.2))
+	$Panel/VBox/TimeRow/NoonButton.pressed.connect(func(): set_time_requested.emit(0.5))
+	$Panel/VBox/TimeRow/DuskButton.pressed.connect(func(): set_time_requested.emit(0.8))
+	$Panel/VBox/TimeRow/MidnightButton.pressed.connect(func(): set_time_requested.emit(0.0))
 	hitboxes_button.pressed.connect(func(): toggle_hitboxes_requested.emit())
 	grid_button.pressed.connect(func(): toggle_grid_requested.emit())
 

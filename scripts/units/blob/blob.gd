@@ -183,6 +183,7 @@ func _ready() -> void:
 	_apply_kind_look()
 	_ring_material = MaterialUtil.duplicated_material(selection_ring)
 	selection_ring.set_surface_override_material(0, _ring_material)
+	GemSparkle.apply_to_emissive_meshes(self)
 	_refresh_stats()
 	health = max_health
 	GameManager.upgrade_changed.connect(_on_upgrade_changed)

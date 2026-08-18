@@ -34,6 +34,7 @@ const PAIR_PAYOUT_FRACTION := 0.25
 ## SelectionManager.handle_click_select).
 func _ready() -> void:
 	add_to_group("slot_machines")
+	GemSparkle.apply_to_emissive_meshes(self)
 
 ## Whether the player can currently afford a spin.
 func can_afford_spin() -> bool:

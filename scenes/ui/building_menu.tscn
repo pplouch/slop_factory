@@ -51,35 +51,35 @@ theme_override_constants/separation = 4
 
 [node name="NameLabel" type="Label" parent="Panel/Scroll/VBox/ThisBuildingSection"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 22
+theme_override_font_sizes/font_size = 24
 text = "Building"
 horizontal_alignment = 1
 
 [node name="ConstructionLabel" type="Label" parent="Panel/Scroll/VBox/ThisBuildingSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1.0, 0.85, 0.4, 0.95)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 15
 text = "Under Construction: 0%"
 horizontal_alignment = 1
 
 [node name="DurabilityLabel" type="Label" parent="Panel/Scroll/VBox/ThisBuildingSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.85, 0.75, 0.9)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 15
 text = "Durability: 100 / 100"
 horizontal_alignment = 1
 
 [node name="PortsLabel" type="Label" parent="Panel/Scroll/VBox/ThisBuildingSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.8, 0.9, 1, 0.85)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 15
 text = "Inputs: 0   Outputs: 0"
 horizontal_alignment = 1
 
 [node name="InfoExtraLabel" type="Label" parent="Panel/Scroll/VBox/ThisBuildingSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 0.85)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 14
 text = ""
 horizontal_alignment = 1
 autowrap_mode = 2
@@ -99,7 +99,7 @@ text = "Upgrade"
 [node name="PerkLabel" type="Label" parent="Panel/Scroll/VBox/ThisBuildingSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 1, 0.75, 0.85)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 14
 text = "Next perk: ..."
 autowrap_mode = 2
 
@@ -112,7 +112,7 @@ layout_mode = 2
 [node name="UpgradesTitle" type="Label" parent="Panel/Scroll/VBox/GlobalUpgradesSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.75, 1, 1)
-theme_override_font_sizes/font_size = 15
+theme_override_font_sizes/font_size = 17
 text = "Global Upgrades"
 
 [node name="UpgradeRows" type="VBoxContainer" parent="Panel/Scroll/VBox/GlobalUpgradesSection"]
@@ -127,7 +127,7 @@ layout_mode = 2
 [node name="HireTitle" type="Label" parent="Panel/Scroll/VBox/HireSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.65, 1, 1)
-theme_override_font_sizes/font_size = 15
+theme_override_font_sizes/font_size = 17
 text = "Hire Blobs"
 
 [node name="HireRows" type="VBoxContainer" parent="Panel/Scroll/VBox/HireSection"]

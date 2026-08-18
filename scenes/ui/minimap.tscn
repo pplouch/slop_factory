@@ -14,4 +14,5 @@ offset_top = -196.0
 offset_right = -16.0
 offset_bottom = -16.0
 mouse_filter = 0
+clip_contents = true
 script = ExtResource("1")

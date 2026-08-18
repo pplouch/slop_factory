@@ -181,12 +181,12 @@ func _make_kind_box(kind, blobs_of_kind: Array) -> Control:
 	box.add_child(vbox)
 
 	var header := Label.new()
-	header.add_theme_font_size_override("font_size", 15)
+	header.add_theme_font_size_override("font_size", 17)
 	header.text = "%s x%d" % [kind.display_name, blobs_of_kind.size()]
 	vbox.add_child(header)
 
 	var stats := Label.new()
-	stats.add_theme_font_size_override("font_size", 12)
+	stats.add_theme_font_size_override("font_size", 14)
 	stats.text = kind.stat_summary()
 	vbox.add_child(stats)
 
@@ -196,7 +196,7 @@ func _make_kind_box(kind, blobs_of_kind: Array) -> Control:
 	# computed minimum height. These blurbs are short enough to read as one
 	# line; the panel's own width simply grows a little to fit instead.
 	var trait_label := Label.new()
-	trait_label.add_theme_font_size_override("font_size", 11)
+	trait_label.add_theme_font_size_override("font_size", 13)
 	trait_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.8))
 	trait_label.text = kind.trait_description
 	vbox.add_child(trait_label)
@@ -210,19 +210,19 @@ func _make_kind_box(kind, blobs_of_kind: Array) -> Control:
 
 	if _tracked_group.size() == 1:
 		_solo_task_label = Label.new()
-		_solo_task_label.add_theme_font_size_override("font_size", 12)
+		_solo_task_label.add_theme_font_size_override("font_size", 14)
 		vbox.add_child(_solo_task_label)
 
 		_solo_level_label = Label.new()
-		_solo_level_label.add_theme_font_size_override("font_size", 12)
+		_solo_level_label.add_theme_font_size_override("font_size", 14)
 		vbox.add_child(_solo_level_label)
 
 		_solo_inventory_label = Label.new()
-		_solo_inventory_label.add_theme_font_size_override("font_size", 12)
+		_solo_inventory_label.add_theme_font_size_override("font_size", 14)
 		vbox.add_child(_solo_inventory_label)
 
 		_solo_equipped_label = Label.new()
-		_solo_equipped_label.add_theme_font_size_override("font_size", 12)
+		_solo_equipped_label.add_theme_font_size_override("font_size", 14)
 		vbox.add_child(_solo_equipped_label)
 
 	return box

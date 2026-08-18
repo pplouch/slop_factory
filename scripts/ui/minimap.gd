@@ -87,7 +87,19 @@ func _process(_delta: float) -> void:
 
 ## World-space position -> a local pixel position within this control's rect,
 ## relative to the camera's current center (see _camera_center) rather than
-## the world origin.
+## the world origin. Clamped to this control's own rect -- an entity outside
+## the currently-shown world_half_size window still returns a point glued to
+## the nearest edge rather than one further out, which is what a plain
+## draw_circle(_world_to_local(pos), radius, ...) call needs: without
+## `clip_contents = true` on this control (see minimap.tscn's Display node),
+## a dot drawn exactly at that edge still spills `radius` pixels past the
+## rect's true border, landing outside the region _draw()'s own fog overlay
+## covers (which *is* confined to this rect) -- so the spilled sliver reads
+## as an uncovered, never-fogged dot poking out past the minimap's edge
+## (see feature request: "green dots on the minimap border are partially
+## covered by fog, but not entirely, because they're partially out of the
+## minimap"). clip_contents makes Godot itself discard anything drawn
+## outside the rect, so the spillover is simply never rendered.
 func _world_to_local(world_pos: Vector3) -> Vector2:
 	var center := _camera_center()
 	var nx := (world_pos.x - center.x + _world_half_size) / (_world_half_size * 2.0)

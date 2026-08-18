@@ -42,7 +42,7 @@ theme_override_constants/separation = 10
 
 [node name="TitleLabel" type="Label" parent="Panel/VBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 22
 text = "Options"
 horizontal_alignment = 1
 

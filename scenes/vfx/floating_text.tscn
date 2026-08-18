@@ -1,11 +1,18 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/vfx/floating_text.gd" id="1"]
 
+[sub_resource type="SystemFont" id="SystemFont_floating"]
+font_names = PackedStringArray("Segoe UI", "Verdana", "Arial", "sans-serif")
+font_weight = 700
+multichannel_signed_distance_field = true
+
 [node name="FloatingText" type="Label3D"]
 billboard = 1
-font_size = 7
-outline_size = 2
+font = SubResource("SystemFont_floating")
+font_size = 40
+pixel_size = 0.00125
+outline_size = 10
 fixed_size = true
 no_depth_test = true
 script = ExtResource("1")

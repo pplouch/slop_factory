@@ -1,16 +1,16 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/world_objects/resource_node.gd" id="1"]
+[ext_resource type="Shader" path="res://scripts/world_objects/water_surface.gdshader" id="2"]
 
 [sub_resource type="CylinderShape3D" id="CylinderShape3D_1"]
 radius = 3.2
 height = 0.3
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_water"]
-albedo_color = Color(0.2, 0.48, 0.8, 0.88)
-metallic = 0.4
-roughness = 0.1
-transparency = 1
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_water"]
+shader = ExtResource("2")
+shader_parameter/water_color = Color(0.2, 0.48, 0.8, 0.88)
+shader_parameter/roughness_value = 0.1
 
 [sub_resource type="SphereMesh" id="SphereMesh_water"]
 
@@ -30,4 +30,4 @@ shape = SubResource("CylinderShape3D_1")
 position = Vector3(0, 0.02, 0)
 scale = Vector3(3.2, 0.08, 3.2)
 mesh = SubResource("SphereMesh_water")
-surface_material_override/0 = SubResource("StandardMaterial3D_water")
+surface_material_override/0 = SubResource("ShaderMaterial_water")

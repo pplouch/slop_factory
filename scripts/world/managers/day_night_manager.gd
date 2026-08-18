@@ -17,14 +17,26 @@ extends RefCounted
 const DAY_LENGTH_SECONDS := 300.0
 const WAVE_INTERVAL_DAYS := 7
 
+## The game now starts already at noon (see setup()) instead of at t=0
+## (midnight, current_day()'s own day-boundary point) -- starting at
+## midnight meant every fresh session opened in near-darkness, which read
+## as a bug ("it looks like night during the day") rather than the
+## intended day/night cycle actually working.
+const START_TIME_FRACTION := 0.5
+
 # -- Visual tuning: sun energy/color and sky brightness across the cycle --
-const DAY_LIGHT_ENERGY := 1.0
-const NIGHT_LIGHT_ENERGY := 0.15
+## Bumped well past a bare-default DirectionalLight3D's energy=1.0 -- at
+## this project's steep top-down RTS camera angle, with no other light
+## source in the scene, 1.0 alone read as dim/flat rather than a bright
+## sunny day (see feature request: "daytime to be more light, it looks
+## like it's night when it's daytime actually").
+const DAY_LIGHT_ENERGY := 1.15
+const NIGHT_LIGHT_ENERGY := 0.18
 const DAY_LIGHT_COLOR := Color(1.0, 0.98, 0.92)
 const NIGHT_LIGHT_COLOR := Color(0.55, 0.6, 0.85)
-const DAY_SKY_TOP := Color(0.35, 0.55, 0.85)
+const DAY_SKY_TOP := Color(0.38, 0.58, 0.9)
 const NIGHT_SKY_TOP := Color(0.02, 0.03, 0.08)
-const DAY_SKY_HORIZON := Color(0.75, 0.8, 0.85)
+const DAY_SKY_HORIZON := Color(0.78, 0.82, 0.87)
 const NIGHT_SKY_HORIZON := Color(0.05, 0.05, 0.12)
 
 # -- Wave spawn tuning --
@@ -47,6 +59,12 @@ func setup(world: Node3D, sun: DirectionalLight3D, sky_material: ProceduralSkyMa
 	_world = world
 	_sun = sun
 	_sky_material = sky_material
+	_elapsed_seconds = DAY_LENGTH_SECONDS * START_TIME_FRACTION
+	# Applied immediately (rather than waiting for the first process() call
+	# next frame) so the very first rendered frame already shows full noon
+	# brightness instead of one frame of the sun/sky's pre-cycle engine
+	# defaults.
+	_apply_lighting()
 
 ## Godot per-frame hook (called from World._process): advances the clock,
 ## refreshes lighting, and checks whether a new wave day has just arrived.
@@ -77,6 +95,17 @@ func time_of_day_fraction() -> float:
 func is_night() -> bool:
 	var t := time_of_day_fraction()
 	return t < 0.15 or t > 0.75
+
+## Debug helper (see DebugMenu's time-of-day buttons): jumps straight to
+## `fraction` (0..1, see time_of_day_fraction) within the *current* day --
+## preserves current_day()'s own running count rather than resetting it --
+## and re-applies lighting immediately rather than waiting for the next
+## process() call, so a tester sees the change the instant the button is
+## pressed.
+func set_time_fraction(fraction: float) -> void:
+	var day_index := current_day() - 1
+	_elapsed_seconds = (day_index + clamp(fraction, 0.0, 0.999)) * DAY_LENGTH_SECONDS
+	_apply_lighting()
 
 ## Smoothly interpolates the sun's energy/color and the sky's colors across
 ## the day/night cycle using a single cosine-shaped brightness curve (peaks
@@ -109,10 +138,14 @@ func _spawn_wave() -> void:
 	for i in WAVE_ENEMY_COUNT:
 		var angle := (TAU / WAVE_ENEMY_COUNT) * i
 		var offset := Vector3(cos(angle), 0.0, sin(angle)) * WAVE_SPAWN_RADIUS
+		var spawn_pos := center + offset
 		var enemy: Node3D = SpawnManager.ENEMY_SCENE.instantiate()
 		enemy.kind_id = kind_ids.pick_random()
+		# difficulty_multiplier must be set before add_child -- see Enemy's
+		# own header on why it can't just read global_position in _ready().
+		enemy.difficulty_multiplier = Biomes.enemy_difficulty_multiplier_at(spawn_pos.x, spawn_pos.z)
 		_world.add_child(enemy)
-		enemy.global_position = center + offset
+		enemy.global_position = spawn_pos
 	Effects.spawn_floating_text(_world, center + Vector3(0.0, 2.0, 0.0), "A wave of enemies approaches!", WAVE_WARNING_COLOR)
 
 ## The player's Town Hall position if one has been built, else the map

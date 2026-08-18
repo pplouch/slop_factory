@@ -99,6 +99,8 @@ var _day_night_manager := DayNightManager.new()
 ## whichever manager now owns that behavior. Every other object (blobs,
 ## buildings, UI) already exists as scene children.
 func _ready() -> void:
+	_configure_environment($WorldEnvironment.environment)
+
 	minimap.set_world_bounds(MINIMAP_HALF_SIZE)
 	minimap.set_camera(camera_rig, camera)
 
@@ -130,7 +132,10 @@ func _ready() -> void:
 	debug_menu.toggle_requested.connect(_debug_overlay_manager.toggle_debug_menu)
 	debug_menu.spawn_blob_requested.connect(_debug_overlay_manager.debug_spawn_blob)
 	debug_menu.spawn_enemy_requested.connect(_spawn_manager.spawn_one_enemy)
+	debug_menu.spawn_enemies_near_base_requested.connect(func(): _spawn_manager.spawn_enemies_near_base(8))
 	debug_menu.add_resources_requested.connect(_debug_overlay_manager.debug_add_resources)
+	debug_menu.clear_fog_requested.connect(_fog_manager.reveal_all)
+	debug_menu.set_time_requested.connect(_day_night_manager.set_time_fraction)
 	debug_menu.toggle_hitboxes_requested.connect(_debug_overlay_manager.toggle_debug_visuals)
 	debug_menu.toggle_grid_requested.connect(_debug_overlay_manager.toggle_world_grid)
 
@@ -143,6 +148,40 @@ func _ready() -> void:
 	minimap.camera_move_requested.connect(_move_camera_to)
 	tech_tree_panel.opened.connect(func(): close_other_ui(tech_tree_panel))
 	hud.end_run_requested.connect(_on_end_run_requested)
+
+## One-time visual tuning pass on the scene's single Environment resource
+## (world.tscn's own Environment_1 sub-resource ships with everything at
+## engine defaults -- Linear tonemap, no glow, no ambient occlusion). ACES
+## tonemapping plus a small exposure lift reads as a punchier, less flat
+## "filmic" look than Linear; Glow is what actually makes every emissive
+## material this pass added (GemSparkle's ore/crystal shimmer, the
+## volcanic ground's ember glow, AmbientParticles' fireflies/embers, the
+## water shaders' sparkle) visibly bloom instead of just being a slightly
+## brighter flat color; SSAO adds contact shadowing under
+## buildings/units/props so the ground doesn't read as a flat plane from
+## this project's steep top-down camera. Ambient light explicitly sourced
+## from the sky (rather than left at its default) so ambient brightness
+## keeps tracking DayNightManager's own sky-color animation instead of
+## whatever the engine's own fallback would pick.
+func _configure_environment(env: Environment) -> void:
+	# Left at Linear/default exposure deliberately -- ACES/Filmic tonemapping
+	# plus a raised exposure very quickly over-brightened this project's flat
+	# low-poly albedo colors into a washed-out pale look during testing
+	# (verified with a real-renderer screenshot), the opposite of the
+	# "beautiful" ask. Glow's hdr_threshold is set high enough that only
+	# genuinely emissive materials (GemSparkle's ore/crystal shimmer, the
+	# volcanic ground's ember glow, AmbientParticles' fireflies/embers, the
+	# new world-object point lights, the water shaders' sparkle) bloom --
+	# ordinary sunlit terrain/albedo colors should never cross that
+	# threshold, so Glow adds sparkle without brightening the whole scene.
+	env.ambient_light_energy = 0.85
+	env.glow_enabled = true
+	env.glow_intensity = 0.4
+	env.glow_bloom = 0.05
+	env.glow_hdr_threshold = 1.8
+	env.ssao_enabled = true
+	env.ssao_radius = 1.5
+	env.ssao_intensity = 1.2
 
 ## Closes every other primary UI popup/panel and deselects any currently
 ## selected blobs whenever one of them opens, so BuildingMenu/

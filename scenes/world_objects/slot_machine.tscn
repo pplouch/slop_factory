@@ -54,3 +54,9 @@ mesh = SubResource("BoxMesh_screen")
 position = Vector3(0.5, 1.1, 0.1)
 rotation = Vector3(0, 0, 0.35)
 mesh = SubResource("BoxMesh_lever")
+
+[node name="ScreenGlow" type="OmniLight3D" parent="."]
+position = Vector3(0, 1.05, 0.5)
+light_color = Color(1.0, 0.8, 0.2, 1)
+light_energy = 1.2
+omni_range = 3.0

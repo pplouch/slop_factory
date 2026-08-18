@@ -46,12 +46,24 @@ func debug_spawn_blob() -> void:
 	if building:
 		building.debug_spawn_blob()
 
+## Every gatherable/craftable resource type in the game (see
+## Effects.resource_color and Biomes' resource lists for the canonical
+## names) -- used by debug_add_resources so testing build mode/the tech
+## tree/the Foundry never needs an actual harvesting grind first, not just
+## the original wood/stone/planks trio.
+const DEBUG_RESOURCE_TYPES := [
+	"wood", "stone", "planks", "knowledge", "food", "water",
+	"mushroom", "cactus_fiber", "ice_crystal", "obsidian",
+	"iron", "gold", "silver", "platinum", "slopium",
+	"iron_bar", "gold_bar", "silver_bar", "platinum_bar", "slopium_bar",
+]
+const DEBUG_RESOURCE_AMOUNT := 500
+
 ## Signal handler for DebugMenu's "Add Resources" button: tops up every
-## known resource type by 100.
+## known resource type (see DEBUG_RESOURCE_TYPES) by DEBUG_RESOURCE_AMOUNT.
 func debug_add_resources() -> void:
-	GameManager.add_resource("wood", 100)
-	GameManager.add_resource("stone", 100)
-	GameManager.add_resource("planks", 100)
+	for resource_type in DEBUG_RESOURCE_TYPES:
+		GameManager.add_resource(resource_type, DEBUG_RESOURCE_AMOUNT)
 
 ## Signal handler for DebugMenu's "Show/Hide Grid" button: toggles a static
 ## overlay of the factory-placement grid's cell boundaries (built once, on

@@ -23,6 +23,16 @@ const BASE_ATTACK_INTERVAL := 1.4
 ## the scene, e.g. World's biome-aware spawner) *before* this node enters
 ## the tree, since _ready() reads it immediately to pick stats and cosmetics.
 @export var kind_id: String = "slime"
+## Extra stat multiplier from Biomes.enemy_difficulty_multiplier_at, sampled
+## at the *spawn position* by whoever instantiates this enemy (see feature
+## request: "the farther the biome is... the harder the enemies"). Set as
+## an export rather than having _ready() read global_position itself,
+## since every spawn call site sets global_position *after* add_child (the
+## position isn't known until the caller picks it), which would make
+## _ready() -- which runs synchronously during add_child -- always sample
+## distance 0 from the origin. Defaults to 1.0 (no change) so any call site
+## that doesn't bother setting it still gets sane stats.
+@export var difficulty_multiplier: float = 1.0
 
 var attack_power: float = BASE_ATTACK_POWER
 var attack_interval: float = BASE_ATTACK_INTERVAL
@@ -92,7 +102,7 @@ func _ready() -> void:
 	super._ready()
 	add_to_group("enemies")
 	var kind := EnemyKinds.get_kind(kind_id)
-	var difficulty := GameManager.get_enemy_difficulty_multiplier()
+	var difficulty := GameManager.get_enemy_difficulty_multiplier() * difficulty_multiplier
 	max_health = BASE_MAX_HEALTH * difficulty * kind.health_mult
 	health = max_health
 	health_regen = BASE_HEALTH_REGEN

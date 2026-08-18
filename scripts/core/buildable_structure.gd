@@ -53,6 +53,15 @@ var _construction_bar_root: Node3D = null
 var _construction_bar_fill: MeshInstance3D = null
 var _construction_bar_fill_mesh: QuadMesh = null
 
+# -- Ambient building light (see _emits_ambient_light/_spawn_building_light) --
+const BUILDING_LIGHT_COLOR := Color(1.0, 0.85, 0.55)
+const BUILDING_LIGHT_ENERGY := 0.6
+const BUILDING_LIGHT_RANGE := 6.0
+const BUILDING_LIGHT_Y := 1.5
+
+## Null until the structure finishes construction -- see _spawn_building_light.
+var _building_light: OmniLight3D = null
+
 
 ## Reads max_durability/durability from this instance's BuildingKinds entry.
 ## Called by each subclass's own _ready(), not automatically -- see header.
@@ -105,6 +114,33 @@ func _apply_construction_visual(fraction: float) -> void:
 			mesh.scale.y = height_fraction
 		mesh.position.y = base_position.y * height_fraction
 	_refresh_construction_bar(fraction)
+	if fraction >= 1.0 and _building_light == null and _emits_ambient_light():
+		_spawn_building_light()
+
+## Template Method hook: whether a finished instance of this structure
+## should glow a little in the dark (see feature request: "make buildings
+## also a bit light emitting", the same night-visibility ask that put
+## torches on every Blob) -- true by default for genuine buildings (Town
+## Hall, Storage Depot, Water Tank, ...). LinkableBuilding overrides this
+## false, since Wall/BeltSegment/Pipe/Road are numerous factory-grid
+## pieces rather than "buildings" in the sense the ask meant, and a long
+## belt/wall line would otherwise add up to dozens of real-time lights for
+## no real visual benefit.
+func _emits_ambient_light() -> bool:
+	return true
+
+## Adds a small warm OmniLight3D once this structure finishes construction
+## -- never while still under construction (a construction site shouldn't
+## already glow like a finished building), and only once (this is never
+## torn down, unlike the construction bar, since a finished building never
+## goes back to being unfinished).
+func _spawn_building_light() -> void:
+	_building_light = OmniLight3D.new()
+	_building_light.light_color = BUILDING_LIGHT_COLOR
+	_building_light.light_energy = BUILDING_LIGHT_ENERGY
+	_building_light.omni_range = BUILDING_LIGHT_RANGE
+	add_child(_building_light)
+	_building_light.position = Vector3(0.0, BUILDING_LIGHT_Y, 0.0)
 
 ## Keeps the always-visible "still under construction" progress bar in sync
 ## with `fraction`, building it lazily the first time this runs rather than

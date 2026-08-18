@@ -16,12 +16,29 @@ const CHUNK_SIZE := 25.0
 ## quantized steps -- terrain relief is purely cosmetic either way (see
 ## _build_ground_mesh), so the extra vertices are cheap.
 const SUBDIVISIONS := 10
-## Doubled from the original 32 (see feature backlog: "smooth and improve
-## terrain texture") -- TEXTURE_NOISE_FREQUENCY was halved alongside it so
-## the mottling pattern keeps the same physical size per chunk, just
-## resolved at twice the pixel density (less blocky/pixelated up close).
-const TEXTURE_SIZE := 64
+## Doubled twice now from the original 32 (see feature backlog: "smooth and
+## improve terrain texture", then the "looks low-resolution" pass that also
+## added mipmaps -- see _build_ground_material) -- TEXTURE_NOISE_FREQUENCY
+## was halved alongside the first doubling so the mottling pattern keeps the
+## same physical size per chunk, just resolved at higher pixel density
+## (less blocky/pixelated up close, and mip-filterable at a distance).
+const TEXTURE_SIZE := 128
 const TEXTURE_NOISE_FREQUENCY := 0.09
+## Fine-grain detail speckling (see _build_ground_material) -- a pixel whose
+## much-higher-frequency detail_noise sample exceeds this threshold gets
+## darkened, giving sparse dirt-clump/grain flecks on top of the base
+## mottling. Threshold picked high enough that only a small fraction of
+## pixels qualify (a sparse scatter of flecks, not a second overlapping
+## band pattern).
+const DETAIL_SPECKLE_THRESHOLD := 0.55
+const DETAIL_SPECKLE_DARKEN := 0.22
+## How strongly the generated normal map perturbs lighting (see
+## _build_ground_material's second pass) -- tuned by eye against a real-
+## renderer screenshot; the base mottling noise varies gently (0..1 over
+## many texels), so this needs to be well above 1.0 to read as a visible
+## bump rather than a near-flat surface.
+const NORMAL_MAP_STRENGTH := 5.0
+const GROUND_SHADER: Shader = preload("res://scripts/world/ground.gdshader")
 
 ## Resource clusters attempted per chunk (each biome resource entry has an
 ## independent chance to actually appear, so not every chunk gets one of
@@ -58,14 +75,17 @@ const ENEMY_VILLAGE_SCENE: PackedScene = preload("res://scenes/world_objects/ene
 const SLOT_MACHINE_CHANCE := 0.05
 const SLOT_MACHINE_SCENE: PackedScene = preload("res://scenes/world_objects/slot_machine.tscn")
 
-## Rivers/lakes are placed procedurally (see Biomes.is_river_at/is_lake_at)
-## rather than at a flat per-chunk chance -- a chunk only gets a harvestable
-## water source if one of a few sampled points inside it actually lands on
-## river/lake terrain, so water reads as following the same winding
-## rivers/broad lakes the ground tinting shows instead of scattering
-## puddles anywhere.
+## Lakes are placed procedurally (see Biomes.is_lake_at) rather than at a
+## flat per-chunk chance -- a chunk only gets a harvestable water source if
+## one of a few sampled points inside it actually lands on lake terrain, so
+## water reads as following the same broad lakes the ground tinting shows
+## instead of scattering puddles anywhere. Rivers used to also spawn a
+## small "puddle" pond (`water_pond.tscn`) at any crossing, removed since
+## the river itself already reads as water via the ground's own tint/shore-
+## foam shader (see Biomes.water_tint_at/shore_factor_at) without needing a
+## separate harvestable object cluttering every crossing -- Lake remains
+## the sole harvestable "water" resource_type source.
 const WATER_PLACEMENT_ATTEMPTS := 6
-const RIVER_POND_SCENE: PackedScene = preload("res://scenes/world_objects/water_pond.tscn")
 const LAKE_SCENE: PackedScene = preload("res://scenes/world_objects/lake.tscn")
 
 var biome: Biomes.Biome
@@ -84,6 +104,8 @@ func generate(coord: Vector2i, p_biome: Biomes.Biome) -> void:
 	biome = p_biome
 	_build_ground()
 	_scatter_resources()
+	_scatter_props()
+	_spawn_ambient_particles()
 	_maybe_spawn_water()
 	if randf() < ANIMAL_CHANCE:
 		var count := randi_range(1, 3)
@@ -121,15 +143,27 @@ func _build_ground() -> void:
 ## UVs), displaces only its vertices' Y using the shared, world-space-
 ## sampled Biomes.height_at (so height agrees with whatever any neighboring
 ## chunk already computed for the same border vertex), and tints vertices
-## via Biomes.water_tint_at -- white on dry land, smoothly blending through
-## a sandy shore ring and into shallow/deep water as the underlying noise
-## approaches and passes its water threshold (see feature backlog: "water
-## ridge should have a texture on the borders to make it more realistic").
-## Both are purely cosmetic terrain relief/color -- Blob/Enemy's
-## global_position.y stays force-clamped to 0.0 every physics frame
-## regardless (see CLAUDE.md: "this project has no vertical gameplay"), so
-## this never has to agree with unit footing, just look pleasant from the
-## RTS camera angle.
+## with `Biomes.blended_ground_color_at(...) * Biomes.water_tint_at(...)` --
+## the former a continuously-blended biome color (see that function's own
+## header on why this needs to be a per-*vertex* value rather than baked
+## into the chunk's own tiled procedural texture: a texture repeats within
+## one chunk and so can never carry a whole-chunk-spanning gradient, while
+## vertex colors interpolate smoothly and agree exactly with a neighboring
+## chunk's own mesh at their shared border, since both sample the same
+## continuous world-space function), the latter white on dry land, smoothly
+## blending through a sandy shore ring and into shallow/deep water as the
+## underlying noise approaches and passes its water threshold (see feature
+## backlog: "water ridge should have a texture on the borders to make it
+## more realistic") -- multiplying the two together means water still reads
+## as its own tint near the shore (water_tint_at dominates there) while dry
+## land shows the smooth biome blend (water_tint_at is pure white away from
+## water, a no-op multiply). Both are purely cosmetic terrain relief/color --
+## Blob/Enemy's global_position.y stays force-clamped to 0.0 every physics
+## frame regardless (see CLAUDE.md: "this project has no vertical
+## gameplay"), so this never has to agree with unit footing, just look
+## pleasant from the RTS camera angle. Vertex-color alpha separately carries
+## Biomes.shore_factor_at -- unused by anything reading the tint as a
+## color, but read by ground.gdshader as its animated-foam mask.
 func _build_ground_mesh() -> ArrayMesh:
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(CHUNK_SIZE, CHUNK_SIZE)
@@ -147,7 +181,10 @@ func _build_ground_mesh() -> ArrayMesh:
 		var world_z := global_position.z + v.z
 		var height: float = Biomes.height_at(world_x, world_z)
 		vertices[i] = Vector3(v.x, height, v.z)
-		colors[i] = Biomes.water_tint_at(world_x, world_z)
+		var biome_blend: Color = Biomes.blended_ground_color_at(world_x, world_z)
+		var tint: Color = Biomes.water_tint_at(world_x, world_z)
+		var shore: float = Biomes.shore_factor_at(world_x, world_z)
+		colors[i] = Color(biome_blend.r * tint.r, biome_blend.g * tint.g, biome_blend.b * tint.b, shore)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_COLOR] = colors
 
@@ -160,15 +197,49 @@ func _build_ground_mesh() -> ArrayMesh:
 	st.generate_normals()
 	return st.commit()
 
-## Builds a small procedurally-mottled texture tinted to this biome's
-## ground_color (light/dark noise bands, the same "generate an Image by
-## hand" technique BeltSegment uses for its stripe texture) so the ground
-## reads as textured terrain rather than a flat color swatch. Vertex colors
-## (see _build_ground_mesh) multiply on top of this via
-## vertex_color_use_as_albedo, tinting river/lake vertices blue without
-## needing a second, position-sampled texture.
-func _build_ground_material() -> StandardMaterial3D:
-	var img := Image.create(TEXTURE_SIZE, TEXTURE_SIZE, false, Image.FORMAT_RGB8)
+## Neutral gray reference the procedural texture's own light/dark mottling
+## darkens/lightens around -- deliberately *not* biome.ground_color (see
+## this method's own header): the actual hue now comes entirely from the
+## per-vertex Biomes.blended_ground_color_at multiply in ground.gdshader,
+## so the texture itself only ever needs to carry grayscale
+## brightness variation, the same way a real terrain shader separates a
+## grayscale detail/roughness texture from a vertex-painted base color.
+const TEXTURE_NEUTRAL_BASE := Color(0.92, 0.92, 0.92)
+
+## Builds a small procedurally-mottled *grayscale* texture (light/dark noise
+## bands around TEXTURE_NEUTRAL_BASE, the same "generate an Image by hand"
+## technique BeltSegment uses for its stripe texture) so the ground reads as
+## textured terrain rather than a flat color swatch, plus a second,
+## much higher-frequency DETAIL_NOISE layer sparsely darkening scattered
+## pixels on top -- reads as small dirt clumps/pebble grain breaking up the
+## base mottling's otherwise fairly uniform band pattern, the same "layer a
+## finer-scale pass on top" idea TEXTURE_NOISE_FREQUENCY's own fractal
+## octaves already use, just at a scale coarse noise octaves alone don't
+## reach. Vertex colors (see _build_ground_mesh) multiply on top of this via
+## ground.gdshader, tinting river/lake vertices blue without needing a
+## second, position-sampled texture, and also drive that shader's animated
+## shoreline foam (see its own header). On volcanic ground specifically,
+## those same detail-noise pixels also seed the texture's *alpha* channel
+## as an "ember" mask (1.0, else 0.0 everywhere on every other biome) --
+## ground.gdshader reads that mask to pulse a glowing crack there, purely a
+## volcanic-flavor bonus riding on noise samples this function was already
+## computing per pixel anyway.
+##
+## Also builds a matching normal map, derived from the same base-mottling
+## noise field via a central-difference pass (a texel's "height" is just
+## its own `n` sample, reused as a cheap pseudo-heightfield) -- without
+## this, the ground previously lit as a perfectly flat surface with a
+## painted-on color pattern, which read as flat/plasticky/"low-resolution"
+## regardless of how sharp the color texture itself was. Both images call
+## `generate_mipmaps()` before becoming textures (see feature request:
+## "the textures... look low-resolution") -- `ImageTexture.create_from_image`
+## does not generate mips on its own, so despite `ground.gdshader` already
+## sampling with `filter_linear_mipmap`, there was previously only ever a
+## single mip level to filter, which shows up as shimmering/aliasing at a
+## distance rather than smoothly blurring like a normal textured surface.
+func _build_ground_material() -> ShaderMaterial:
+	var img := Image.create(TEXTURE_SIZE, TEXTURE_SIZE, false, Image.FORMAT_RGBA8)
+	var normal_img := Image.create(TEXTURE_SIZE, TEXTURE_SIZE, false, Image.FORMAT_RGB8)
 	var tex_noise := FastNoiseLite.new()
 	tex_noise.seed = hash(chunk_coord) + 1
 	tex_noise.frequency = TEXTURE_NOISE_FREQUENCY
@@ -179,31 +250,70 @@ func _build_ground_material() -> StandardMaterial3D:
 	tex_noise.fractal_octaves = 3
 	tex_noise.fractal_lacunarity = 2.0
 	tex_noise.fractal_gain = 0.4
+
+	var detail_noise := FastNoiseLite.new()
+	detail_noise.seed = hash(chunk_coord) + 2
+	detail_noise.frequency = TEXTURE_NOISE_FREQUENCY * 3.5
+	var is_volcanic := biome.id == "volcanic"
+
+	var heights := PackedFloat32Array()
+	heights.resize(TEXTURE_SIZE * TEXTURE_SIZE)
+
 	for y in TEXTURE_SIZE:
 		for x in TEXTURE_SIZE:
 			var n: float = (tex_noise.get_noise_2d(x, y) + 1.0) * 0.5
-			var shade: Color = biome.ground_color.darkened(0.12).lerp(biome.ground_color.lightened(0.12), n)
-			img.set_pixel(x, y, shade)
-	var tex := ImageTexture.create_from_image(img)
+			heights[y * TEXTURE_SIZE + x] = n
+			var shade: Color = TEXTURE_NEUTRAL_BASE.darkened(0.12).lerp(TEXTURE_NEUTRAL_BASE.lightened(0.12), n)
+			var detail: float = detail_noise.get_noise_2d(x, y)
+			var ember := 0.0
+			if detail > DETAIL_SPECKLE_THRESHOLD:
+				shade = shade.darkened(DETAIL_SPECKLE_DARKEN)
+				if is_volcanic:
+					ember = 1.0
+			img.set_pixel(x, y, Color(shade.r, shade.g, shade.b, ember))
 
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = tex
-	mat.roughness = 0.95
-	mat.uv1_scale = Vector3(4.0, 4.0, 1.0)
-	mat.vertex_color_use_as_albedo = true
+	for y in TEXTURE_SIZE:
+		for x in TEXTURE_SIZE:
+			var xl := maxi(x - 1, 0)
+			var xr := mini(x + 1, TEXTURE_SIZE - 1)
+			var yd := maxi(y - 1, 0)
+			var yu := mini(y + 1, TEXTURE_SIZE - 1)
+			var dx: float = (heights[y * TEXTURE_SIZE + xr] - heights[y * TEXTURE_SIZE + xl]) * NORMAL_MAP_STRENGTH
+			var dy: float = (heights[yu * TEXTURE_SIZE + x] - heights[yd * TEXTURE_SIZE + x]) * NORMAL_MAP_STRENGTH
+			var normal := Vector3(-dx, -dy, 1.0).normalized()
+			normal_img.set_pixel(x, y, Color(normal.x * 0.5 + 0.5, normal.y * 0.5 + 0.5, normal.z * 0.5 + 0.5))
+
+	img.generate_mipmaps()
+	normal_img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
+	var normal_tex := ImageTexture.create_from_image(normal_img)
+
+	var mat := ShaderMaterial.new()
+	mat.shader = GROUND_SHADER
+	mat.set_shader_parameter("albedo_texture", tex)
+	mat.set_shader_parameter("normal_texture", normal_tex)
+	mat.set_shader_parameter("uv_scale", Vector2(4.0, 4.0))
 	return mat
 
 ## Scatters a handful of small resource clusters using this chunk's
 ## biome's resource list (see Biomes.Biome.resources) -- each resource
 ## entry independently has RESOURCE_ATTEMPT_CHANCE of appearing at all in
 ## this particular chunk, so neighboring chunks of the same biome still
-## look varied rather than identically populated.
+## look varied rather than identically populated. Both that chance and how
+## many clusters actually appear are additionally scaled by
+## Biomes.resource_abundance_multiplier_at (see feature request: "the
+## farther the biome is, the rarer the resources") -- 1.0 near the origin,
+## dropping toward Biomes.MIN_RESOURCE_ABUNDANCE_MULT out at
+## Biomes.DIFFICULTY_MAX_DISTANCE, so resources read as progressively
+## scarcer with distance on top of however common this biome's own resource
+## list already makes them.
 func _scatter_resources() -> void:
 	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
+	var abundance: float = Biomes.resource_abundance_multiplier_at(global_position.x, global_position.z)
 	for entry in biome.resources:
-		if randf() > RESOURCE_ATTEMPT_CHANCE:
+		if randf() > RESOURCE_ATTEMPT_CHANCE * abundance:
 			continue
-		var count := randi_range(RESOURCE_CLUSTER_COUNT_RANGE.x, RESOURCE_CLUSTER_COUNT_RANGE.y)
+		var count := maxi(1, roundi(randi_range(RESOURCE_CLUSTER_COUNT_RANGE.x, RESOURCE_CLUSTER_COUNT_RANGE.y) * abundance))
 		for i in count:
 			var inst: Node3D = entry.scene.instantiate()
 			add_child(inst)
@@ -212,13 +322,32 @@ func _scatter_resources() -> void:
 			var s := randf_range(0.85, 1.25)
 			inst.scale = Vector3(s, s, s)
 
+## Scatters this biome's purely-decorative foliage/bloom props (see
+## PropScatter) -- unlike _scatter_resources, these are never harvestable
+## and carry no state, so they're batched as MultiMeshInstance3D nodes
+## rather than individual scene instances.
+func _scatter_props() -> void:
+	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
+	var origin := Vector2(global_position.x, global_position.z)
+	for node in PropScatter.build_for_biome(biome.id, half, origin):
+		add_child(node)
+
+## Adds this biome's small ambient drifting-particle effect (see
+## AmbientParticles) -- offset up to roughly chest height so the emission
+## box sits mostly above the ground/props rather than half-buried in it.
+func _spawn_ambient_particles() -> void:
+	var half := CHUNK_SIZE * 0.5
+	var particles := AmbientParticles.build_for_biome(biome.id, half)
+	add_child(particles)
+	particles.position = Vector3(0.0, 1.2, 0.0)
+
 ## Tries a few random points within this chunk (see WATER_PLACEMENT_ATTEMPTS)
-## and, the first time one actually lands on lake or river terrain (see
-## Biomes.is_lake_at/is_river_at), spawns a matching harvestable water
-## source there -- a big Lake for a lake hit, a smaller pond for a river
-## crossing. Most chunks sample none and get no water at all, since rivers/
-## lakes are now a localized procedural feature rather than a flat chance
-## anywhere.
+## and, the first time one actually lands on lake terrain (see
+## Biomes.is_lake_at), spawns a harvestable Lake there. Most chunks sample
+## none and get no water source at all, since lakes are a localized
+## procedural feature rather than a flat chance anywhere -- a river
+## crossing a chunk no longer spawns anything here (see WATER_PLACEMENT_ATTEMPTS'
+## own comment), it's purely the ground's own tint/shore-foam doing the work.
 func _maybe_spawn_water() -> void:
 	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
 	for attempt in WATER_PLACEMENT_ATTEMPTS:
@@ -227,11 +356,6 @@ func _maybe_spawn_water() -> void:
 		var world_z := global_position.z + local.z
 		if Biomes.is_lake_at(world_x, world_z):
 			var inst: Node3D = LAKE_SCENE.instantiate()
-			add_child(inst)
-			inst.position = local
-			return
-		if Biomes.is_river_at(world_x, world_z):
-			var inst: Node3D = RIVER_POND_SCENE.instantiate()
 			add_child(inst)
 			inst.position = local
 			return

@@ -23,6 +23,13 @@ extends BuildableStructure
 
 var blocks_movement := true
 
+## Wall/BeltSegment/Pipe/Road are numerous factory-grid pieces, not
+## "buildings" in the sense BuildableStructure's own ambient-light feature
+## means -- see that method's own header for why this is a plain override
+## rather than the base class's default.
+func _emits_ambient_light() -> bool:
+	return false
+
 
 ## Re-checks all 4 neighboring grid cells and updates which connector/rail
 ## is shown toward each, via the two hooks below. Called by World once this

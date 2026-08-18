@@ -26,6 +26,7 @@ var _base_scale: Vector3 = Vector3.ONE
 func _ready() -> void:
 	amount = max_amount
 	add_to_group("resource_nodes")
+	GemSparkle.apply_to_emissive_meshes(self)
 
 ## Brings a depleted node back: grows it back in from nothing, re-enables
 ## its solid collision and pickability. Called after the respawn delay

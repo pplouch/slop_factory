@@ -83,6 +83,14 @@ func _reveal_at(world_pos: Vector3) -> void:
 				_fog_image.set_pixel(x, y, Color(0.0, 0.0, 0.0, 0.0))
 				_fog_dirty = true
 
+## Debug helper (see DebugMenu's "Clear Fog" button): marks the whole
+## tracked map revealed at once, the same sticky "never re-hides" semantics
+## normal exploration already gives a cell -- lets a tester eyeball far-off
+## content without needing to actually walk a blob there first.
+func reveal_all() -> void:
+	_fog_image.fill(Color(0.0, 0.0, 0.0, 0.0))
+	_fog_dirty = true
+
 ## Whether `world_pos` has already been revealed, or falls entirely outside
 ## this manager's tracked coverage (see world_half_size) where nothing is
 ## fogged in the first place -- used by BuildingManager to block placing

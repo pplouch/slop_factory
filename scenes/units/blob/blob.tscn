@@ -35,6 +35,28 @@ material = SubResource("StandardMaterial3D_ring")
 inner_radius = 0.5
 outer_radius = 0.62
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_torch_stick"]
+albedo_color = Color(0.35, 0.22, 0.12, 1)
+roughness = 0.9
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_torch_stick"]
+material = SubResource("StandardMaterial3D_torch_stick")
+top_radius = 0.02
+bottom_radius = 0.025
+height = 0.3
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_torch_flame"]
+albedo_color = Color(1.0, 0.65, 0.15, 1)
+shading_mode = 2
+emission_enabled = true
+emission = Color(1.0, 0.5, 0.1, 1)
+emission_energy_multiplier = 2.0
+
+[sub_resource type="SphereMesh" id="SphereMesh_torch_flame"]
+material = SubResource("StandardMaterial3D_torch_flame")
+radius = 0.06
+height = 0.12
+
 [node name="Blob" type="CharacterBody3D"]
 collision_layer = 2
 collision_mask = 14
@@ -61,6 +83,24 @@ position = Vector3(-0.23, 0.72, 0)
 [node name="LeftArm" type="MeshInstance3D" parent="Visuals/LeftArmPivot"]
 position = Vector3(0, -0.16, 0)
 mesh = SubResource("BoxMesh_arm")
+
+[node name="TorchPivot" type="Node3D" parent="Visuals/LeftArmPivot"]
+position = Vector3(0, -0.32, 0.04)
+rotation_degrees = Vector3(15, 0, 0)
+
+[node name="TorchStick" type="MeshInstance3D" parent="Visuals/LeftArmPivot/TorchPivot"]
+position = Vector3(0, 0.15, 0)
+mesh = SubResource("CylinderMesh_torch_stick")
+
+[node name="TorchFlame" type="MeshInstance3D" parent="Visuals/LeftArmPivot/TorchPivot"]
+position = Vector3(0, 0.32, 0)
+mesh = SubResource("SphereMesh_torch_flame")
+
+[node name="TorchLight" type="OmniLight3D" parent="Visuals/LeftArmPivot/TorchPivot"]
+position = Vector3(0, 0.32, 0)
+light_color = Color(1.0, 0.6, 0.25, 1)
+light_energy = 0.9
+omni_range = 5.0
 
 [node name="RightArmPivot" type="Node3D" parent="Visuals"]
 position = Vector3(0.23, 0.72, 0)
