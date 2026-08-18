@@ -2,13 +2,21 @@ class_name Chunk
 extends Node3D
 ## One streamed tile of the world map: its own ground mesh (a subtly
 ## height-jittered, biome-tinted plane) with flat collision for raycasting,
-## plus a scatter of that biome's resource nodes. Generated once, the first
-## time World notices the camera has come near it (see
-## World._ensure_chunks_loaded) -- like Minecraft's chunk loading, but
-## deliberately load-only, never unloaded/regenerated: resource nodes
-## inside a chunk are live, persistent game objects a blob might already be
-## en route to, and freeing them out from under it would be a real bug, not
-## just a visual pop.
+## plus a scatter of that biome's resource nodes. Generated the first time
+## World notices the camera has come near it (see ChunkManager.
+## ensure_chunks_loaded), and freed again once the camera has moved far
+## enough away (see ChunkManager._unload_far_chunks) -- unlike Minecraft's
+## own "unloaded chunks just aren't simulated", this project has no on-disk
+## save format for world state, so every generate() call (first-time or a
+## reload after unloading) must reproduce the *exact* same content for a
+## given `coord`, deterministically, or a returning player would see a
+## different set of resources/chest/etc. than they left. See _rng's own
+## header for how that determinism is achieved, and snapshot_state/
+## restore_state for how harvested amounts/loot survive the round trip.
+##
+## ChunkManager never unloads a chunk that placed a Village (see
+## has_village) or that any blob is currently standing in or travelling
+## toward -- see ChunkManager's own header for why.
 
 const CHUNK_SIZE := 25.0
 ## Governs the smoothness of the (purely cosmetic) height/biome-color
@@ -83,31 +91,102 @@ const SLOT_MACHINE_SCENE: PackedScene = preload("res://scenes/world_objects/slot
 var biome: Biomes.Biome
 var chunk_coord: Vector2i
 
+## Seeded from `hash(chunk_coord)` at the top of generate() -- every content
+## -placement roll in this file (resource clusters, animals, chest/village/
+## slot-machine spawn + position/rotation/scale) reads from this instead of
+## the global randf()/randi_range(), so regenerating the same `coord` after
+## an unload always reproduces the exact same sequence of objects rather
+## than a fresh, different roll. Purely decorative content with no state to
+## lose (PropScatter foliage, AmbientParticles) still uses the global RNG --
+## reseeding those too would just be extra plumbing for a difference no
+## player could actually notice.
+var _rng := RandomNumberGenerator.new()
 
-## Builds this chunk's ground and scenery. `coord` is used only to seed
-## per-chunk randomness deterministically (not strictly required since
-## chunks never regenerate, but keeps a given coordinate's *shape*
-## reproducible if ever needed for debugging). Must be called after this
-## node is already positioned in the tree (global_position must be final)
-## since ground-height/river/lake sampling all read world-space positions
-## for seamless continuity across chunk borders.
-func generate(coord: Vector2i, p_biome: Biomes.Biome) -> void:
+## Every ResourceNode-derived instance this chunk creates (trees/rocks/ore
+## from _scatter_resources, Animal from the huddle loop below), in creation
+## order -- since generation is fully deterministic (see _rng), regenerating
+## this same chunk_coord later reproduces the identical sequence, so a saved
+## amount at index i in snapshot_state's output always lines back up with
+## the regenerated instance at that same index.
+var _resource_nodes: Array = []
+## Set the moment _maybe_spawn_chest actually creates one (left null if the
+## roll said no) -- lets snapshot_state tell "never had a chest here" apart
+## from "had one, but it's since been looted" (Chest.open() queue_frees it,
+## so is_instance_valid(_chest) goes false).
+var _chest: Node = null
+## True if this chunk placed a Village (friendly or enemy). ChunkManager
+## reads this to permanently exclude this coord from ever being unloaded --
+## see this file's own header and ChunkManager's for why neither Village
+## kind is designed to survive being torn down and regenerated from scratch.
+var has_village: bool = false
+
+## Passed in by ChunkManager on a reload (see snapshot_state) -- {} on a
+## genuine first-time generation. Consumed by _maybe_spawn_chest (to
+## suppress recreating an already-looted chest) and by
+## _apply_saved_resource_amounts (called at the end of generate()).
+var _saved_state: Dictionary = {}
+
+
+## Builds this chunk's ground and scenery. `coord` seeds this chunk's own
+## _rng, so this always reproduces the same content for the same `coord`
+## (see _rng's own header) -- `saved_state` (from a previous
+## snapshot_state(), or {} on a genuine first visit) then patches in
+## whatever has actually changed since (harvested amounts, a looted chest).
+## Must be called after this node is already positioned in the tree
+## (global_position must be final) since ground-height/river/lake sampling
+## all read world-space positions for seamless continuity across chunk
+## borders.
+func generate(coord: Vector2i, p_biome: Biomes.Biome, saved_state: Dictionary = {}) -> void:
 	chunk_coord = coord
 	biome = p_biome
+	_rng.seed = hash(coord)
+	_saved_state = saved_state
 	_build_ground()
 	_scatter_resources()
 	_scatter_props()
 	_spawn_ambient_particles()
-	if randf() < ANIMAL_CHANCE:
-		var count := randi_range(1, 3)
+	if _rng.randf() < ANIMAL_CHANCE:
+		var count := _rng.randi_range(1, 3)
 		for i in count:
 			_spawn_one(ANIMAL_SCENE)
-	if randf() < CHEST_CHANCE:
+	if _rng.randf() < CHEST_CHANCE:
 		_maybe_spawn_chest()
-	if randf() < VILLAGE_CHANCE:
+	if _rng.randf() < VILLAGE_CHANCE:
 		_maybe_spawn_village()
-	if randf() < SLOT_MACHINE_CHANCE:
+	if _rng.randf() < SLOT_MACHINE_CHANCE:
 		_maybe_spawn_slot_machine()
+	_apply_saved_resource_amounts()
+
+## Captures this chunk's current mutable state right before ChunkManager
+## frees it: every still-tracked resource node's remaining amount (0 for one
+## that's fully depleted/mid-respawn), and whether its Chest -- if any --
+## has already been looted. A later regeneration of this same coord (see
+## generate/restore_state above) re-applies this so the player picks back up
+## where they left off instead of everything looking suspiciously freshly
+## full/unlooted again.
+func snapshot_state() -> Dictionary:
+	var amounts: Array = []
+	amounts.resize(_resource_nodes.size())
+	for i in _resource_nodes.size():
+		var node = _resource_nodes[i]
+		amounts[i] = node.amount if is_instance_valid(node) else 0
+	return {
+		"resource_amounts": amounts,
+		"chest_looted": _chest != null and not is_instance_valid(_chest),
+	}
+
+## Re-applies snapshot_state's saved resource amounts (see _saved_state) to
+## this chunk's freshly (re)generated resource nodes -- called once at the
+## end of generate(), after every resource/animal instance already exists.
+## The chest side of _saved_state is instead consumed directly inside
+## _maybe_spawn_chest, before it ever instantiates one, so a looted chest
+## never even briefly flashes back into existence.
+func _apply_saved_resource_amounts() -> void:
+	var amounts: Array = _saved_state.get("resource_amounts", [])
+	for i in mini(amounts.size(), _resource_nodes.size()):
+		var node = _resource_nodes[i]
+		if is_instance_valid(node):
+			node.restore_state(amounts[i])
 
 ## Builds the ground mesh (height-displaced plane, biome-tinted procedural
 ## texture) and a matching flat collision box for raycasting -- the
@@ -337,11 +416,11 @@ func _scatter_resources() -> void:
 	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
 	var abundance: float = Biomes.resource_abundance_multiplier_at(global_position.x, global_position.z)
 	for entry in biome.resources:
-		if randf() > RESOURCE_ATTEMPT_CHANCE * abundance:
+		if _rng.randf() > RESOURCE_ATTEMPT_CHANCE * abundance:
 			continue
-		var count := maxi(1, roundi(randi_range(RESOURCE_CLUSTER_COUNT_RANGE.x, RESOURCE_CLUSTER_COUNT_RANGE.y) * abundance))
+		var count := maxi(1, roundi(_rng.randi_range(RESOURCE_CLUSTER_COUNT_RANGE.x, RESOURCE_CLUSTER_COUNT_RANGE.y) * abundance))
 		for i in count:
-			var local := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+			var local := Vector3(_rng.randf_range(-half, half), 0.0, _rng.randf_range(-half, half))
 			# A tree/rock/ore floating in a river or lake reads as a clear
 			# placement bug (see feature request: "resources cannot be
 			# placed on water") -- skipped rather than retried, same
@@ -353,9 +432,10 @@ func _scatter_resources() -> void:
 			var inst: Node3D = entry.scene.instantiate()
 			add_child(inst)
 			inst.position = local
-			inst.rotation.y = randf() * TAU
-			var s := randf_range(0.85, 1.25)
+			inst.rotation.y = _rng.randf() * TAU
+			var s := _rng.randf_range(0.85, 1.25)
 			inst.scale = Vector3(s, s, s)
+			_resource_nodes.append(inst)
 
 ## Scatters this biome's purely-decorative foliage/bloom props (see
 ## PropScatter) -- unlike _scatter_resources, these are never harvestable
@@ -376,52 +456,67 @@ func _spawn_ambient_particles() -> void:
 	add_child(particles)
 	particles.position = Vector3(0.0, 1.2, 0.0)
 
-## Spawns one instance of `scene` at a random point within this chunk.
+## Spawns one instance of `scene` at a random point within this chunk --
+## tracked in _resource_nodes since the only caller (the animal huddle in
+## generate()) instantiates a ResourceNode subclass (Animal).
 func _spawn_one(scene: PackedScene) -> void:
 	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
 	var inst: Node3D = scene.instantiate()
 	add_child(inst)
-	inst.position = Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+	inst.position = Vector3(_rng.randf_range(-half, half), 0.0, _rng.randf_range(-half, half))
+	_resource_nodes.append(inst)
 
 ## Spawns one Chest at a random point in this chunk (see CHEST_CHANCE) --
 ## skipped entirely if the rolled spot happens to land on water, rather
 ## than a chest floating in a lake (no retry, unlike _maybe_spawn_water's
 ## several attempts -- a chest simply not appearing in this particular
-## chunk is a fine outcome given how rare it already is).
+## chunk is a fine outcome given how rare it already is). Also skipped if
+## _saved_state says this coord's chest was already looted before this
+## chunk was last unloaded -- otherwise reloading would hand the player a
+## second, identical free haul.
 func _maybe_spawn_chest() -> void:
+	if _saved_state.get("chest_looted", false):
+		return
 	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
-	var local := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+	var local := Vector3(_rng.randf_range(-half, half), 0.0, _rng.randf_range(-half, half))
 	if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
 		return
 	var inst: Node3D = CHEST_SCENE.instantiate()
 	add_child(inst)
 	inst.position = local
-	inst.rotation.y = randf() * TAU
+	inst.rotation.y = _rng.randf() * TAU
+	_chest = inst
 
 ## Spawns one Village at a random point in this chunk (see VILLAGE_CHANCE),
 ## an even coin flip between friendly and enemy -- skipped entirely if the
 ## rolled spot lands on water, same no-retry convention as
-## _maybe_spawn_chest.
+## _maybe_spawn_chest. Sets has_village so ChunkManager permanently excludes
+## this coord from ever being unloaded (see this file's own header).
 func _maybe_spawn_village() -> void:
 	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
-	var local := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+	var local := Vector3(_rng.randf_range(-half, half), 0.0, _rng.randf_range(-half, half))
 	if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
 		return
-	var scene: PackedScene = FRIENDLY_VILLAGE_SCENE if randf() < 0.5 else ENEMY_VILLAGE_SCENE
+	var scene: PackedScene = FRIENDLY_VILLAGE_SCENE if _rng.randf() < 0.5 else ENEMY_VILLAGE_SCENE
 	var inst: Node3D = scene.instantiate()
 	add_child(inst)
 	inst.position = local
-	inst.rotation.y = randf() * TAU
+	inst.rotation.y = _rng.randf() * TAU
+	has_village = true
 
 ## Spawns one SlotMachine at a random point in this chunk (see
 ## SLOT_MACHINE_CHANCE) -- skipped entirely if the rolled spot lands on
 ## water, same no-retry convention as _maybe_spawn_chest/_maybe_spawn_village.
+## Never needs anything from _saved_state: a SlotMachine carries no
+## persistent state of its own (see its own header -- freely repeatable, no
+## "used up" flag), so a regenerated one behaves identically to the one that
+## was there before.
 func _maybe_spawn_slot_machine() -> void:
 	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
-	var local := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+	var local := Vector3(_rng.randf_range(-half, half), 0.0, _rng.randf_range(-half, half))
 	if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
 		return
 	var inst: Node3D = SLOT_MACHINE_SCENE.instantiate()
 	add_child(inst)
 	inst.position = local
-	inst.rotation.y = randf() * TAU
+	inst.rotation.y = _rng.randf() * TAU

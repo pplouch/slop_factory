@@ -69,3 +69,25 @@ func _deplete() -> void:
 	await get_tree().create_timer(respawn_time).timeout
 	amount = max_amount
 	_spawn()
+
+## Re-applies a harvested amount saved by a previous Chunk.snapshot_state,
+## right after this node's own _ready() (which unconditionally resets
+## amount to max_amount) has already run as part of a chunk reload -- see
+## ChunkManager's own header on why a regenerated chunk needs to resume
+## where the player left it rather than looking freshly full again. Skips
+## the despawn/respawn tweens _deplete uses (there's nothing to visually
+## shrink away; this node never existed until this exact frame) but still
+## restarts a full respawn_time countdown for an already-depleted node --
+## deliberately not the exact remaining time it had before unloading, a
+## small, safe-direction inaccuracy (never better for the player than
+## staying would have been) rather than tracking partial respawn progress
+## for what should be a rare edge case.
+func restore_state(saved_amount: int) -> void:
+	amount = saved_amount
+	if amount <= 0:
+		remove_from_group("resource_nodes")
+		set_collision_layer_value(3, false)
+		visible = false
+		await get_tree().create_timer(respawn_time).timeout
+		amount = max_amount
+		_spawn()
