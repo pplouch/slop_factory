@@ -8,8 +8,8 @@ extends Node
 ## biome, then reads this data to populate it.
 ##
 ## This is also the single shared source for every world-generation noise
-## field (temperature/humidity/volcanic-hotspot biome classification, river/
-## lake placement): every FastNoiseLite here uses a fixed seed and is
+## field (temperature/humidity/volcanic-hotspot biome classification, lake/
+## lava/oil placement): every FastNoiseLite here uses a fixed seed and is
 ## queried in *world* space, so any two chunks sampling the same world
 ## position -- regardless of which one generates first -- always get the
 ## same answer. Ground terrain used to also carry a multi-layer height/
@@ -23,39 +23,50 @@ extends Node
 ## relief, it's a small, legible cue paired directly with the water-tint
 ## gradient, not the "not well used" system this removal targeted.
 ##
-## River/lake realism (see feature request: "the same kind of unnatural
-## patterns repeat themselves... make rivers and lakes more realistic") --
-## _warp offsets the *sampling position* fed into river_noise/lake_noise (and
-## every hazard-liquid noise field below) by a second, independent, much-
-## lower-frequency pair of fields (warp_x_noise/warp_z_noise), the standard
-## "domain warp" technique: a raw single-frequency ridged/thresholded field
-## reads as an obviously synthetic, uniformly-spaced sine-wave meander
-## (rivers) or same-size evenly-spaced blob lattice (lakes), since it repeats
-## identically everywhere. Warping the position first breaks that regularity
-## without a more exotic noise algorithm, since the warp field itself doesn't
-## repeat in sync with whatever it's warping -- no two bends or lake shapes
-## end up looking quite the same. river_width_noise adds a further touch of
-## realism specific to rivers: real rivers narrow and widen along their
-## length rather than holding one constant width forever (see
-## _river_half_width_at).
+## Real water is lakes only (see feature request: "remove the water rivers,
+## they are not natural enough") -- a real water river (river_noise, a
+## ridged noise band) was tried and removed: even after domain-warping it
+## (see _warp below), a thin winding line feature never stopped reading as a
+## noise artifact the way a broad lake's threshold blob does. Lava keeps its
+## own river feature (lava_river_noise) since that specific complaint was
+## about *water* rivers, not lava's.
 ##
-## Lava/oil (see the same feature request: "add oil lakes and lava lakes /
-## rivers... stay coherent with the biomes") are deliberately kept as a
-## fully separate, parallel system from real water (see hazard_sample_at)
-## rather than folded into water_sample_at's own river/lake merge -- real
-## water's contract (and the regression tests pinned to it) stays completely
-## unaffected, and biome coherence comes for free by reusing the *exact*
-## same gates the Volcanic/Desert biome branches already use rather than
-## inventing new ones: lava (is_lava_at) only ever rolls where
-## is_volcanic_at is already true (the same hotspot field the Volcanic
-## biome's own ground color/enemy population read), and oil (is_oil_at)
-## only ever rolls where _is_hot_dry_climate_at is true (the same
-## temperature/humidity condition the Desert branch of biome_for_world_pos
-## itself checks) -- so neither hazard can ever appear somewhere the ground
-## wouldn't independently read as that same biome too. Deliberately not new
-## Biome registry entries: both are localized terrain features layered onto
-## an existing biome's territory, the same relationship rivers/lakes already
-## have with every biome, not a whole new chunk-spanning climate region.
+## _warp offsets the *sampling position* fed into lake_noise (and every
+## hazard-liquid noise field below) by a second, independent, much-lower-
+## frequency pair of fields (warp_x_noise/warp_z_noise), the standard
+## "domain warp" technique: a raw single-frequency thresholded field reads as
+## an obviously synthetic, same-size evenly-spaced blob lattice, since it
+## repeats identically everywhere. Warping the position first breaks that
+## regularity without a more exotic noise algorithm, since the warp field
+## itself doesn't repeat in sync with whatever it's warping -- no two lake
+## shapes end up looking quite the same.
+##
+## Lakes, lava, and oil are mutually exclusive by construction (see feature
+## request: "lakes and rivers and oil and lava SHOULD NOT overlap") rather
+## than merely unlikely to coincide: the map is partitioned into three
+## disjoint zones using the exact same conditions the biome classification
+## itself already uses (so this doubles as free biome coherence, see feature
+## request: "stay coherent with the biomes") --
+## 1. `is_volcanic_at` true -> the Lava zone. Only lava (is_lava_at, lake-
+##    style pools merged with river-style streams) can appear here; real
+##    water (is_lake_at) and oil (is_oil_at) both explicitly exclude this
+##    zone regardless of what their own noise fields say.
+## 2. Not volcanic, but `_is_hot_dry_climate_at` true (the same condition the
+##    Desert branch of biome_for_world_pos checks) -> the Oil zone. Only oil
+##    can appear here; real water excludes this zone too.
+## 3. Neither -> the Water zone. Only real water (lakes) can appear here --
+##    lava/oil's own gates above already can't be true in this zone, so no
+##    extra exclusion is needed on their end.
+## Each zone's own boolean gate lives in that liquid's is_xxx_at function
+## (is_lake_at/is_lava_at/is_oil_at/is_deep_water_at/is_deep_oil_at), so every
+## caller -- PathingManager, Chunk's scatter avoidance, hazard_sample_at,
+## water_sample_at -- sees the same partition automatically; nothing computes
+## its own separate "which zone am I in" logic.
+##
+## Deliberately not new Biome registry entries for lava/oil: both are
+## localized terrain features layered onto an existing biome's territory, the
+## same relationship lakes already have with every biome, not a whole new
+## chunk-spanning climate region.
 
 class Biome:
 	var id: String
@@ -93,7 +104,7 @@ const SLOPIUM_ORE_SCENE: PackedScene = preload("res://scenes/world_objects/slopi
 
 ## Radius (world units) of the always-plains starting area around the
 ## origin, where founder blobs spawn and the player builds first -- kept
-## free of the harsher outer biomes' tougher enemies and of any river/lake
+## free of the harsher outer biomes' tougher enemies and of any lake
 ## (see is_water_at) so the player never starts standing in water. Widened
 ## (see feature backlog: "biomes should be farther away and take more
 ## space, so their unique resources are harder to get from the beginning")
@@ -120,24 +131,15 @@ var volcanic_noise := FastNoiseLite.new()
 ## distance from the origin -- see that function's own header for why a
 ## noise layer is mixed in rather than using pure distance alone.
 var difficulty_noise := FastNoiseLite.new()
-## Rivers: winding line-like features wherever this noise crosses zero
-## (see is_river_at) -- a classic "ridged" trick that needs no pathing/
-## graph-connectivity work and is naturally continuous across chunks since
-## it's one shared field sampled in world space.
-var river_noise := FastNoiseLite.new()
 ## Lakes: broad, slow-varying blobs wherever this noise exceeds a
-## threshold (see is_lake_at).
+## threshold (see is_lake_at) -- real water's only remaining feature (see
+## this file's own header on why the old ridged-noise river was removed).
 var lake_noise := FastNoiseLite.new()
 ## Domain-warp fields (see this file's own header) -- deliberately two
 ## independent fields at slightly different frequencies rather than one
 ## reused for both axes, so the warp itself isn't symmetric/diagonal.
 var warp_x_noise := FastNoiseLite.new()
 var warp_z_noise := FastNoiseLite.new()
-## Slow-varying field that widens/narrows a river along its own length
-## instead of a single constant half-width everywhere (see
-## _river_half_width_at) -- real rivers vary a lot between a narrow rapids
-## stretch and a wide slow one.
-var river_width_noise := FastNoiseLite.new()
 ## Lava: lake-style pools plus river-style streams, both gated on
 ## is_volcanic_at (see this file's own header on why).
 var lava_lake_noise := FastNoiseLite.new()
@@ -156,17 +158,13 @@ const HUMIDITY_DRY := 0.35
 ## hotspots/lakes read as a genuinely occasional feature rather than either
 ## vanishingly rare or covering large stretches of the map.
 const VOLCANIC_THRESHOLD := 0.4
-const RIVER_HALF_WIDTH := 0.035
 const LAKE_THRESHOLD := 0.35
-## Deep water is a strict subset of "any water" at a stricter threshold/
-## narrower band, always leaving a shallow ring/edge between deep water and
-## dry land -- see is_deep_water_at. Units can wade the shallow border (to
-## gather or build a Water Extractor) but not the deep core; margins picked
-## so the shallow band reads as clearly present without swallowing the
-## whole feature (a river's central 40% is deep vs. its outer 60% shallow;
-## a lake's threshold is nudged up by DEEP_LAKE_MARGIN so a meaningful ring
-## around its edge stays shallow).
-const DEEP_RIVER_FRACTION := 0.4
+## Deep water is a strict subset of "any water" at a stricter threshold,
+## always leaving a shallow ring/edge between deep water and dry land -- see
+## is_deep_water_at. Units can wade the shallow border (to gather or build a
+## Water Extractor) but not the deep core; the lake's own threshold is
+## nudged up by DEEP_LAKE_MARGIN so a meaningful ring around its edge stays
+## shallow instead of the whole feature reading as deep at once.
 const DEEP_LAKE_MARGIN := 0.08
 ## Ground-vertex tint colors for water_tint_at's smooth land -> shore ->
 ## shallow -> deep gradient (see feature backlog: "water ridge should have
@@ -175,32 +173,26 @@ const DEEP_LAKE_MARGIN := 0.08
 const SHORE_TINT_COLOR := Color(0.82, 0.74, 0.52)
 const SHALLOW_WATER_TINT_COLOR := Color(0.2, 0.45, 0.7)
 const DEEP_WATER_TINT_COLOR := Color(0.08, 0.2, 0.4)
-## How wide (in noise-value units, same scale as RIVER_HALF_WIDTH/
-## LAKE_THRESHOLD) the sandy shore band is on the land side of the water
-## line.
-const RIVER_SHORE_BAND := 0.01
+## How wide (in noise-value units, same scale as LAKE_THRESHOLD) the sandy
+## shore band is on the land side of the water line.
 const LAKE_SHORE_BAND := 0.03
 ## Nothing counts as water this close to the origin, so founder blobs never
 ## spawn standing in a lake.
 const WATER_SAFE_RADIUS := 12.0
-## How far rivers/lakes sink the ground mesh, purely cosmetic (ground
+## How far lakes/lava/oil sink the ground mesh, purely cosmetic (ground
 ## collision stays flat regardless, per project convention) -- the one
 ## piece of terrain relief kept after removing the general macro/per-biome
 ## height system (see this file's own header), since it's a small, legible
 ## cue paired directly with water_tint_at's gradient rather than the
 ## "not well used" system that removal targeted.
 const WATER_BASIN_DEPTH := 1.0
-## World-unit amplitude of the domain warp applied before every river/lake/
-## lava/oil noise lookup (see this file's own header and _warp). Large
-## enough relative to each feature's own noise frequency to meaningfully
-## bend a river's path/reshape a lake's edge, not so large it disconnects
-## the warped sample from the surrounding unwarped world (ground color,
-## biome classification, etc. all stay unwarped).
+## World-unit amplitude of the domain warp applied before every lake/lava/
+## oil noise lookup (see this file's own header and _warp). Large enough
+## relative to each feature's own noise frequency to meaningfully reshape a
+## lake's edge, not so large it disconnects the warped sample from the
+## surrounding unwarped world (ground color, biome classification, etc. all
+## stay unwarped).
 const WATER_WARP_AMPLITUDE := 45.0
-## +/- fraction RIVER_HALF_WIDTH can swing by along a river's length (see
-## _river_half_width_at) -- 0.45 means a river's width varies roughly
-## between 55% and 145% of its nominal value from one stretch to the next.
-const RIVER_WIDTH_VARIATION := 0.45
 
 ## -- Lava (volcanic-only hazard liquid, see this file's own header) --
 const LAVA_LAKE_THRESHOLD := 0.45
@@ -263,17 +255,6 @@ func _ready() -> void:
 	volcanic_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	volcanic_noise.frequency = 0.01
 
-	river_noise.seed = 5000
-	river_noise.noise_type = FastNoiseLite.TYPE_PERLIN
-	river_noise.frequency = 0.015
-	# Bumped from 2 to 4 octaves (see this file's own header on realism) --
-	# more fractal detail directly along the ridge itself reads as a less
-	# mechanically-regular meander, on top of the domain warp doing the same
-	# job at a coarser scale.
-	river_noise.fractal_octaves = 4
-	river_noise.fractal_lacunarity = 2.1
-	river_noise.fractal_gain = 0.45
-
 	lake_noise.seed = 6000
 	lake_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	lake_noise.frequency = 0.006
@@ -296,10 +277,6 @@ func _ready() -> void:
 	# isn't perfectly diagonal/symmetric between the two axes.
 	warp_z_noise.frequency = 0.0037
 	warp_z_noise.fractal_octaves = 2
-
-	river_width_noise.seed = 5500
-	river_width_noise.noise_type = FastNoiseLite.TYPE_PERLIN
-	river_width_noise.frequency = 0.003
 
 	lava_lake_noise.seed = 10000
 	lava_lake_noise.noise_type = FastNoiseLite.TYPE_PERLIN
@@ -401,7 +378,7 @@ func height_at(world_x: float, world_z: float) -> float:
 	return -WATER_BASIN_DEPTH if is_any_liquid_at(world_x, world_z) else 0.0
 
 ## Offsets `world_x`/`world_z` by a low-frequency, independent-per-axis warp
-## field before it's fed into any river/lake/lava/oil noise lookup (see this
+## field before it's fed into any lake/lava/oil noise lookup (see this
 ## file's own header on why) -- everything *else* (biome classification,
 ## ground color, difficulty) stays sampled at the true, unwarped position.
 func _warp(world_x: float, world_z: float) -> Vector2:
@@ -410,51 +387,43 @@ func _warp(world_x: float, world_z: float) -> Vector2:
 		world_z + warp_z_noise.get_noise_2d(world_x, world_z) * WATER_WARP_AMPLITUDE
 	)
 
-## A river's effective half-width at `world_x`/`world_z` -- RIVER_HALF_WIDTH
-## modulated by river_width_noise (see that field's own header), sampled at
-## the true unwarped position (width variation is a separate, independent
-## effect from the warp's own path-bending).
-func _river_half_width_at(world_x: float, world_z: float) -> float:
-	return RIVER_HALF_WIDTH * (1.0 + river_width_noise.get_noise_2d(world_x, world_z) * RIVER_WIDTH_VARIATION)
-
-## Whether `world_x`/`world_z` falls within a river's winding path -- a
-## thin band around wherever (warped) river_noise crosses zero, the standard
-## "ridged noise" trick for line-like features with no pathing/graph work.
-func is_river_at(world_x: float, world_z: float) -> bool:
-	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
-		return false
-	var w := _warp(world_x, world_z)
-	return absf(river_noise.get_noise_2d(w.x, w.y)) < _river_half_width_at(world_x, world_z)
-
 ## Whether `world_x`/`world_z` falls within a lake -- a broad region where
 ## the (much lower-frequency, warped) lake_noise field exceeds a threshold.
+## Excludes the Lava and Oil zones outright (see this file's own header on
+## the three-way partition) regardless of what lake_noise itself says there,
+## so real water can never overlap either hazard liquid.
 func is_lake_at(world_x: float, world_z: float) -> bool:
 	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
+		return false
+	if is_volcanic_at(world_x, world_z) or _is_hot_dry_climate_at(world_x, world_z):
 		return false
 	var w := _warp(world_x, world_z)
 	return lake_noise.get_noise_2d(w.x, w.y) > LAKE_THRESHOLD
 
-## Whether `world_x`/`world_z` is any kind of *real water* (river or lake) --
-## used by Chunk's ground-vertex water-avoidance scattering and by Water
-## Extractor's own placement gating, both of which specifically mean H2O, not
-## the hazard liquids below (see is_any_liquid_at for "any liquid at all").
+## Whether `world_x`/`world_z` is any kind of *real water* -- lakes only (see
+## this file's own header on why the old river feature was removed). Used by
+## Chunk's ground-vertex water-avoidance scattering and by Water Extractor's
+## own placement gating, both of which specifically mean H2O, not the hazard
+## liquids below (see is_any_liquid_at for "any liquid at all"). Kept as its
+## own named function (rather than every caller just calling is_lake_at
+## directly) since "is this real water" reads clearer at each call site than
+## "is this a lake" does, and it's one less thing to rename if water ever
+## grows a second feature again.
 func is_water_at(world_x: float, world_z: float) -> bool:
-	return is_river_at(world_x, world_z) or is_lake_at(world_x, world_z)
+	return is_lake_at(world_x, world_z)
 
 ## Whether `world_x`/`world_z` is *deep* water specifically -- a stricter
-## subset of is_water_at (see DEEP_RIVER_FRACTION/DEEP_LAKE_MARGIN above)
-## that PathingManager blocks units from entering, unlike the shallow
-## border ring around it. Always implies is_water_at is also true, since
-## both thresholds here are strictly tighter than the plain water ones (and
-## both are evaluated at the same warped position/effective width is_water_at
-## itself uses, so the "deep implies shallow" guarantee holds regardless of
-## warp/width variation).
+## subset of is_water_at (see DEEP_LAKE_MARGIN above) that PathingManager
+## blocks units from entering, unlike the shallow border ring around it.
+## Always implies is_water_at is also true, since this threshold is strictly
+## tighter than the plain water one (and both exclude the same Lava/Oil
+## zones is_lake_at does, so the "deep implies shallow" guarantee holds).
 func is_deep_water_at(world_x: float, world_z: float) -> bool:
 	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
 		return false
+	if is_volcanic_at(world_x, world_z) or _is_hot_dry_climate_at(world_x, world_z):
+		return false
 	var w := _warp(world_x, world_z)
-	if absf(river_noise.get_noise_2d(w.x, w.y)) < _river_half_width_at(world_x, world_z) * DEEP_RIVER_FRACTION:
-		return true
 	return lake_noise.get_noise_2d(w.x, w.y) > LAKE_THRESHOLD + DEEP_LAKE_MARGIN
 
 ## The exact hot/dry climate condition the Desert branch of
@@ -487,24 +456,31 @@ func is_lava_at(world_x: float, world_z: float) -> bool:
 	return absf(lava_river_noise.get_noise_2d(w.x, w.y)) < LAVA_RIVER_HALF_WIDTH
 
 ## Whether `world_x`/`world_z` is an oil pool -- lake-style only, gated on
-## _is_hot_dry_climate_at (see this file's own header). Unlike lava, oil
-## does get a shallow wadable border (see is_deep_oil_at) the same way real
-## water does.
+## _is_hot_dry_climate_at (see this file's own header). Also explicitly
+## excludes the Lava zone (is_volcanic_at) even though a hot/dry desert
+## climate and a volcanic hotspot are independent fields that could
+## otherwise coincide (a hot volcanic region is a perfectly plausible climate
+## combination) -- Lava takes precedence in that case, the same precedence
+## hazard_sample_at's own if/elif ordering already gives it, so is_oil_at
+## never disagrees with what hazard_sample_at would actually render there.
+## Unlike lava, oil does get a shallow wadable border (see is_deep_oil_at)
+## the same way real water does.
 func is_oil_at(world_x: float, world_z: float) -> bool:
 	if Vector2(world_x, world_z).length() < PLAINS_RADIUS:
 		return false
-	if not _is_hot_dry_climate_at(world_x, world_z):
+	if is_volcanic_at(world_x, world_z) or not _is_hot_dry_climate_at(world_x, world_z):
 		return false
 	var w := _warp(world_x, world_z)
 	return oil_lake_noise.get_noise_2d(w.x, w.y) > OIL_LAKE_THRESHOLD
 
 ## Oil's counterpart to is_deep_water_at -- PathingManager blocks units from
 ## entering this stricter subset of is_oil_at, same shallow-border-stays-
-## walkable shape as real water.
+## walkable shape as real water, and the same Lava-zone exclusion is_oil_at
+## itself uses.
 func is_deep_oil_at(world_x: float, world_z: float) -> bool:
 	if Vector2(world_x, world_z).length() < PLAINS_RADIUS:
 		return false
-	if not _is_hot_dry_climate_at(world_x, world_z):
+	if is_volcanic_at(world_x, world_z) or not _is_hot_dry_climate_at(world_x, world_z):
 		return false
 	var w := _warp(world_x, world_z)
 	return oil_lake_noise.get_noise_2d(w.x, w.y) > OIL_LAKE_THRESHOLD + OIL_LAKE_DEEP_MARGIN
@@ -519,84 +495,52 @@ func is_any_liquid_at(world_x: float, world_z: float) -> bool:
 
 ## Ground-vertex tint for `world_x`/`world_z`: white (no tint) on dry land,
 ## smoothly blending through a sandy `SHORE_TINT_COLOR` ring as the
-## underlying river/lake noise approaches its water threshold, then through
+## underlying lake noise approaches its water threshold, then through
 ## `SHALLOW_WATER_TINT_COLOR` to `DEEP_WATER_TINT_COLOR` past it -- replaces
 ## the old hard is_water_at binary cut with a continuous gradient read from
-## the same noise fields is_river_at/is_lake_at/is_deep_water_at already
-## classify booleans from, so the visual boundary always agrees with the
-## gameplay one (Chunk used to tint every water vertex the same flat color;
-## used by Chunk._build_ground_mesh for its vertex colors). Thin wrapper
-## around water_sample_at -- see that function's own header for why river/
-## lake need to be combined rather than either one checked first.
+## the same noise field is_lake_at/is_deep_water_at already classify booleans
+## from, so the visual boundary always agrees with the gameplay one (Chunk
+## used to tint every water vertex the same flat color; used by
+## Chunk._build_ground_mesh for its vertex colors). Thin wrapper around
+## water_sample_at.
 func water_tint_at(world_x: float, world_z: float) -> Color:
 	var sample: Dictionary = water_sample_at(world_x, world_z)
 	return sample.tint
 
-## river_noise/lake_noise are independent fields sampled purely by world
-## position -- a point can satisfy both a river's is_river_at band and a
-## lake's is_lake_at threshold at once, entirely by coincidence (a long
-## winding river's own noise band numerically grazing a totally unrelated
-## lake somewhere along its path). water_tint_at/shore_factor_at/
-## water_depth_factor_at used to each independently check river first and
-## return whatever it said, regardless of what lake said at that same point
-## -- harmless when only one was actually active, but wherever both
-## coincided it let a river's own shallow/shore tint (or foam, or wave data)
-## cut a visible seam straight through what should have read as one
-## uniform, much deeper lake (see feature request: "rivers and lakes are
-## overlapping... merge them"). This single function is the shared source
-## of truth all three now delegate to: it always computes both sources'
-## full tint/shore/depth independently (each one's own formulas already
-## clamp to a neutral white/0/0 far from its own feature, so there's no
-## need to gate this on an "is either active" check first) and blends
-## between them by a normalized "how confidently/deeply water" signal per
-## source, so whichever source is actually relevant at this exact point
-## dominates smoothly instead of a hard, arbitrary "whichever was checked
-## first" cutover.
+## Real water's tint/shore/depth at `world_x`/`world_z` -- neutral (white/0/0)
+## within WATER_SAFE_RADIUS or the Lava/Oil zones (see this file's own header
+## on the three-way partition; is_lake_at's own gate is the single source of
+## truth this mirrors), otherwise a direct pass-through to _lake_water_sample
+## now that real water is lakes only (see this file's own header on why the
+## old river feature -- and the river/lake merge this function used to do --
+## were both removed).
 func water_sample_at(world_x: float, world_z: float) -> Dictionary:
 	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
 		return {"tint": Color.WHITE, "shore": 0.0, "depth": 0.0}
+	if is_volcanic_at(world_x, world_z) or _is_hot_dry_climate_at(world_x, world_z):
+		return {"tint": Color.WHITE, "shore": 0.0, "depth": 0.0}
+	return _lake_water_sample(world_x, world_z)
 
-	var river := _river_water_sample(world_x, world_z)
-	var lake := _lake_water_sample(world_x, world_z)
-	# A "far away" wetness drops without bound as distance from that
-	# source's own threshold grows (see the two helpers below), so this
-	# comparison always saturates toward whichever source is genuinely near
-	# a feature here -- and where neither is near anything, both sides of
-	# every lerp below are already the same neutral (white, 0, 0), so the
-	# exact blend weight stops mattering at all. Blend band is narrow (0.1)
-	# since wetness is on a shared, comparable 0..1-ish scale for both
-	# sources now (see _river_water_sample/_lake_water_sample's own header
-	# on why that wasn't true of the "strength" value an earlier version of
-	# this blend used).
-	var blend: float = clamp(smoothstep(-0.1, 0.1, lake.wetness - river.wetness), 0.0, 1.0)
-	return {
-		"tint": river.tint.lerp(lake.tint, blend),
-		"shore": lerp(river.shore, lake.shore, blend),
-		"depth": lerp(river.depth, lake.depth, blend),
-	}
-
-## 0..1(+) "wetness" -> tint, shared identically by both
-## _river_water_sample/_lake_water_sample rather than each source computing
-## its own independently-shaped tint curve -- the fix for a real bug found
-## after water_sample_at's initial "which source wins" fix (see feature
-## request: "we can still see the river edges in the lake"): even once
-## dominance blends smoothly by whichever source has the higher `wetness`,
-## the two sources' *tint* values at the crossover point (wetness_river ==
-## wetness_lake) could still disagree substantially, because river's old
-## tint-saturation curve was calibrated in raw noise units against
-## RIVER_HALF_WIDTH * DEEP_RIVER_FRACTION while lake's was calibrated
-## against DEEP_LAKE_MARGIN -- two completely different scales that
-## happened to share a normalization denominator with the *dominance*
-## comparison but not with each other's actual color output. Routing both
-## sources through this one shared function means wherever their wetness
-## values coincide (exactly the blend crossover condition), their tints
-## already agree too, by construction, rather than needing to separately
-## verify two independently-tuned curves happen to match.
+## 0..1(+) "wetness" -> tint, shared identically across every liquid sample
+## in this file rather than each one computing its own independently-shaped
+## tint curve -- originally the fix for a real bug in the old river/lake
+## merge (see feature request: "we can still see the river edges in the
+## lake"): even once dominance blends smoothly by whichever source has the
+## higher `wetness`, two sources' *tint* values at the crossover point
+## (equal wetness) could still disagree substantially if each was calibrated
+## against a different scale that happened to share a normalization
+## denominator with the *dominance* comparison but not with each other's
+## actual color output. Lava's own lake+river merge (_merge_two_liquid_samples)
+## is the one place left in this file that still blends two sources this way
+## -- routing both through this one shared function means wherever their
+## wetness values coincide (exactly the blend crossover condition), their
+## tints already agree too, by construction, rather than needing to
+## separately verify two independently-tuned curves happen to match.
 ## SHORE_WETNESS marks "right at the water line" in this shared 0..1(+)
-## scale: below it is the sandy shore ring (0 = the shore band's outer,
-## driest edge), at/above it is shallow-to-deep water (1.0 = the
-## is_deep_water_at threshold, continuing to extrapolate past 1 toward a
-## source's own visual center for a still-darkening deep tint).
+## scale: below it is the sandy/charred shore ring (0 = the shore band's
+## outer, driest edge), at/above it is shallow-to-deep (1.0 = the deep
+## threshold, continuing to extrapolate past 1 toward a source's own visual
+## center for a still-darkening deep tint).
 const SHORE_WETNESS := 0.4
 
 func _tint_for_wetness(wetness: float) -> Color:
@@ -622,12 +566,15 @@ func _tint_for_wetness_colored(wetness: float, shore_color: Color, shallow_color
 ## wherever |noise| < half_width) -- wetness/shore/depth/tint for a value
 ## already sampled from *some* noise field at *some* (possibly warped)
 ## position, parameterized by that field's own half-width/shore-band/deep-
-## fraction/color set so river_noise and lava_river_noise can both drive it
-## without duplicating this formula (see _tint_for_wetness_colored's own
-## header on why). Well-behaved (neutral tint/shore/depth, wetness
-## saturating below 0) everywhere far from the feature, not just within
-## half_width + shore_band, since every branch below is already a clamped
-## smoothstep/absf ratio.
+## fraction/color set. Currently only lava_river_noise drives this (real
+## water's own river feature was removed, see this file's own header), but
+## it's kept general/parameterized rather than inlined into
+## _lava_river_sample directly since it shares _tint_for_wetness_colored's
+## exact curve shape with _blob_liquid_sample below (see that function's own
+## header on why that sharing matters). Well-behaved (neutral tint/shore/
+## depth, wetness saturating below 0) everywhere far from the feature, not
+## just within half_width + shore_band, since every branch below is already
+## a clamped smoothstep/absf ratio.
 func _ridge_liquid_sample(n: float, half_width: float, shore_band: float, deep_fraction: float,
 		shore_color: Color, shallow_color: Color, deep_color: Color) -> Dictionary:
 	var abs_n := absf(n)
@@ -673,24 +620,12 @@ func _blob_liquid_sample(n: float, threshold: float, shore_band: float, deep_mar
 
 	return {"tint": _tint_for_wetness_colored(wetness, shore_color, shallow_color, deep_color), "shore": shore, "depth": depth, "wetness": wetness}
 
-## One source's (river's) tint/shore/depth/wetness at `world_x`/`world_z` --
-## see water_sample_at's header for `wetness`'s role. Thin wrapper around
-## _ridge_liquid_sample: samples river_noise at the warped position with
-## this exact position's own effective (width-varied) half-width, then feeds
-## the result through water's own shore/shallow/deep color set.
-func _river_water_sample(world_x: float, world_z: float) -> Dictionary:
-	var w := _warp(world_x, world_z)
-	var half_width := _river_half_width_at(world_x, world_z)
-	# Shore-band width scales with the local effective half-width too, so a
-	# stretch of river narrowed by river_width_noise doesn't end up with a
-	# fixed-width shore band wider than the river itself.
-	var shore_band := RIVER_SHORE_BAND * (half_width / RIVER_HALF_WIDTH)
-	var n := river_noise.get_noise_2d(w.x, w.y)
-	return _ridge_liquid_sample(n, half_width, shore_band, DEEP_RIVER_FRACTION, SHORE_TINT_COLOR, SHALLOW_WATER_TINT_COLOR, DEEP_WATER_TINT_COLOR)
-
-## Lake's own counterpart to _river_water_sample -- see water_sample_at's
-## header. Thin wrapper around _blob_liquid_sample with lake_noise (sampled
-## at the warped position) and water's own color set.
+## Real water's (lake) tint/shore/depth/wetness at `world_x`/`world_z` -- see
+## water_sample_at's header for `wetness`'s role. Thin wrapper around
+## _blob_liquid_sample with lake_noise (sampled at the warped position) and
+## water's own color set. Zone-exclusivity (see this file's own header) is
+## the caller's (water_sample_at's) job, not this function's -- this is a
+## pure noise-shape sampler, same as _lava_lake_sample/_oil_lake_sample below.
 func _lake_water_sample(world_x: float, world_z: float) -> Dictionary:
 	var w := _warp(world_x, world_z)
 	var n := lake_noise.get_noise_2d(w.x, w.y)
@@ -728,12 +663,10 @@ func _oil_lake_sample(world_x: float, world_z: float) -> Dictionary:
 
 ## Blends two liquid samples (each a _ridge_liquid_sample/_blob_liquid_sample
 ## result) by whichever has the higher `wetness`, smoothly near a tie --
-## used by hazard_sample_at to merge lava's lake+river sub-features exactly
-## the way water_sample_at merges river+lake below. Kept as its own separate
-## helper rather than reusing water_sample_at's own inline blend: the two
-## pipelines (real water vs. hazard liquids) are deliberately kept
-## independent (see this file's own header), and this one also needs to
-## carry `glow` through the blend, which water's blend never needs to.
+## used by hazard_sample_at to merge lava's lake+river sub-features into one
+## substance. Real water has no equivalent merge of its own since it's lake-
+## only now (see this file's own header on why the old river feature was
+## removed) -- water_sample_at is a direct pass-through to _lake_water_sample.
 func _merge_two_liquid_samples(a: Dictionary, b: Dictionary) -> Dictionary:
 	var blend: float = clamp(smoothstep(-0.1, 0.1, b.wetness - a.wetness), 0.0, 1.0)
 	return {
@@ -853,13 +786,12 @@ func resource_abundance_multiplier_at(world_x: float, world_z: float) -> float:
 	return lerp(1.0, MIN_RESOURCE_ABUNDANCE_MULT, difficulty_at(world_x, world_z))
 
 ## 0..1 shoreline-foam intensity at `world_x`/`world_z`, peaking exactly at
-## the river/lake noise threshold water_tint_at itself blends across (a
-## river's RIVER_HALF_WIDTH crossing, a lake's LAKE_THRESHOLD) and fading to
-## 0 within one shore-band's width to either side -- reuses those same
-## thresholds/bands rather than new tuning constants, so the animated foam
-## in scripts/world/ground.gdshader always lines up with the existing
-## sandy-shore/shallow-water tint band instead of drifting from it. Baked
-## into ground-mesh vertex-color alpha by Chunk (see
+## the lake noise threshold water_tint_at itself blends across (LAKE_THRESHOLD)
+## and fading to 0 within one shore-band's width to either side -- reuses
+## that same threshold/band rather than a new tuning constant, so the
+## animated foam in scripts/world/ground.gdshader always lines up with the
+## existing sandy-shore/shallow-water tint band instead of drifting from it.
+## Baked into ground-mesh vertex-color alpha by Chunk (see
 ## Chunk._build_ground_mesh), since the shader itself has no noise access.
 func shore_factor_at(world_x: float, world_z: float) -> float:
 	var sample: Dictionary = water_sample_at(world_x, world_z)
@@ -867,15 +799,13 @@ func shore_factor_at(world_x: float, world_z: float) -> float:
 
 ## How far "into" water `world_x`/`world_z` is, 0..1 -- 0.0 on dry land and
 ## right at the water line, rising smoothly through the shallow band and
-## saturating at 1.0 by the same is_deep_water_at threshold (see
-## DEEP_RIVER_FRACTION/DEEP_LAKE_MARGIN) rather than peaking-then-fading like
-## shore_factor_at. Read per-pixel (not per-vertex, see Chunk.WATER_MASK_SIZE)
-## by ground.gdshader to grow its wave normal-perturbation with distance from
-## shore (see feature request: "small flat waves that fit the coast shape...
-## add waves farther from the coast" -- the opposite of what a peaked shore
-## mask alone could drive). Thin wrapper around water_sample_at -- see that
-## function's own header for why river/lake need to be combined rather than
-## either one checked first.
+## saturating at 1.0 by the same is_deep_water_at threshold (DEEP_LAKE_MARGIN)
+## rather than peaking-then-fading like shore_factor_at. Read per-pixel (not
+## per-vertex, see Chunk.WATER_MASK_SIZE) by ground.gdshader to grow its wave
+## normal-perturbation with distance from shore (see feature request: "small
+## flat waves that fit the coast shape... add waves farther from the coast"
+## -- the opposite of what a peaked shore mask alone could drive). Thin
+## wrapper around water_sample_at.
 func water_depth_factor_at(world_x: float, world_z: float) -> float:
 	var sample: Dictionary = water_sample_at(world_x, world_z)
 	return sample.depth

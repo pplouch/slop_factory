@@ -23,8 +23,8 @@ var _grid := AStarGrid2D.new()
 ## (see Biomes.is_deep_water_at), lava (Biomes.is_lava_at -- always fully
 ## impassable, no shallow tier), and deep oil (Biomes.is_deep_oil_at) marked
 ## solid upfront from terrain data rather than reactively like a placed
-## structure -- units can wade the shallow border around a lake/river/oil
-## pool (to gather water or build a Water Extractor, itself placement-gated
+## structure -- units can wade the shallow border around a lake/oil pool (to
+## gather water or build a Water Extractor, itself placement-gated
 ## to shallow water for the same reason: a blob has to be able to reach it
 ## to finish building it) but not the deep core, and never any part of a
 ## lava feature at all. Individual cells also go solid as blocking

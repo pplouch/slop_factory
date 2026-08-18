@@ -133,7 +133,7 @@ var _saved_state: Dictionary = {}
 ## snapshot_state(), or {} on a genuine first visit) then patches in
 ## whatever has actually changed since (harvested amounts, a looted chest).
 ## Must be called after this node is already positioned in the tree
-## (global_position must be final) since ground-height/river/lake sampling
+## (global_position must be final) since ground-height/lake/lava/oil sampling
 ## all read world-space positions for seamless continuity across chunk
 ## borders.
 func generate(coord: Vector2i, p_biome: Biomes.Biome, saved_state: Dictionary = {}) -> void:
@@ -294,7 +294,7 @@ const WATER_MASK_SIZE := 64
 ## finer-scale pass on top" idea TEXTURE_NOISE_FREQUENCY's own fractal
 ## octaves already use, just at a scale coarse noise octaves alone don't
 ## reach. Vertex colors (see _build_ground_mesh) multiply on top of this via
-## ground.gdshader, tinting river/lake vertices blue without needing a
+## ground.gdshader, tinting lake vertices blue without needing a
 ## second, position-sampled texture, and also drive that shader's animated
 ## shoreline foam (see its own header). On volcanic ground specifically,
 ## those same detail-noise pixels also seed the texture's *alpha* channel
@@ -366,16 +366,11 @@ func _build_ground_material() -> ShaderMaterial:
 	var tex := ImageTexture.create_from_image(img)
 	var normal_tex := ImageTexture.create_from_image(normal_img)
 
-	# Water tint/shore-foam/wave-depth masks (Biomes.water_sample_at, which
-	# already internally combines river/lake into one consistent result --
-	# see that function's own header) baked at WATER_MASK_SIZE resolution
-	# instead of per-vertex (see that const's own header) -- each texel
-	# samples the exact same world-space function the old vertex loop did,
-	# just at far finer spacing, so the coastline reads as smooth instead of
-	# following the mesh's own coarse vertex grid. One water_sample_at call
-	# per texel (rather than the three separate Biomes calls this used to
-	# make) also means river/lake noise is only sampled once here instead of
-	# three times.
+	# Water tint/shore-foam/wave-depth masks (Biomes.water_sample_at) baked at
+	# WATER_MASK_SIZE resolution instead of per-vertex (see that const's own
+	# header) -- each texel samples the exact same world-space function the
+	# old vertex loop did, just at far finer spacing, so the coastline reads
+	# as smooth instead of following the mesh's own coarse vertex grid.
 	var water_tint_img := Image.create(WATER_MASK_SIZE, WATER_MASK_SIZE, false, Image.FORMAT_RGB8)
 	var water_wave_img := Image.create(WATER_MASK_SIZE, WATER_MASK_SIZE, false, Image.FORMAT_RGB8)
 	for wy in WATER_MASK_SIZE:
@@ -387,10 +382,13 @@ func _build_ground_material() -> ShaderMaterial:
 			# Lava/oil (Biomes.hazard_sample_at) are a fully separate system
 			# from real water (see that function's own header) -- wherever a
 			# hazard is actually present at this pixel, it simply overrides
-			# water's own sample outright rather than blending with it, since
-			# the two are gated to essentially disjoint regions anyway (a
-			# volcanic hotspot or hot/dry desert climate, vs. wherever
-			# river_noise/lake_noise happen to place real water).
+			# water's own sample outright rather than blending with it. Real
+			# water (Biomes.water_sample_at), lava, and oil are now guaranteed
+			# mutually exclusive by construction (see Biomes' own header on
+			# the three-way zone partition -- is_lake_at itself excludes the
+			# Lava/Oil zones), so this override never actually straddles a
+			# real overlap; it's just a clean way to pick whichever of the two
+			# is non-neutral here.
 			var sample: Dictionary = Biomes.water_sample_at(world_x, world_z)
 			var hazard: Dictionary = Biomes.hazard_sample_at(world_x, world_z)
 			if hazard.shore > 0.001 or hazard.depth > 0.001:
@@ -431,8 +429,8 @@ func _scatter_resources() -> void:
 		var count := maxi(1, roundi(_rng.randi_range(RESOURCE_CLUSTER_COUNT_RANGE.x, RESOURCE_CLUSTER_COUNT_RANGE.y) * abundance))
 		for i in count:
 			var local := Vector3(_rng.randf_range(-half, half), 0.0, _rng.randf_range(-half, half))
-			# A tree/rock/ore floating in a river or lake reads as a clear
-			# placement bug (see feature request: "resources cannot be
+			# A tree/rock/ore floating in a lake (or a lava/oil pool) reads as
+			# a clear placement bug (see feature request: "resources cannot be
 			# placed on water") -- skipped rather than retried, same
 			# no-retry convention _maybe_spawn_chest/_maybe_spawn_village
 			# already use, so a biome bordering a lot of water just ends up

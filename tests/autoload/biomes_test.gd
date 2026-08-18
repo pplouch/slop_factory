@@ -24,7 +24,6 @@ func test_get_ordered_ids_contains_every_registered_biome_exactly_once() -> void
 
 func test_water_functions_are_all_false_within_water_safe_radius() -> void:
 	var pos := Vector3(Biomes.WATER_SAFE_RADIUS * 0.5, 0.0, 0.0)
-	assert_bool(Biomes.is_river_at(pos.x, pos.z)).is_false()
 	assert_bool(Biomes.is_lake_at(pos.x, pos.z)).is_false()
 	assert_bool(Biomes.is_water_at(pos.x, pos.z)).is_false()
 	assert_bool(Biomes.is_deep_water_at(pos.x, pos.z)).is_false()
@@ -55,10 +54,10 @@ func test_shore_factor_at_stays_within_unit_range_across_many_samples() -> void:
 
 
 func test_deep_water_implies_water_and_both_are_actually_findable() -> void:
-	# A grid scan, not random sampling -- rivers/deep water are thin bands
-	# that plain random points easily miss entirely, but CLAUDE.md's own
-	# testing notes confirm a real mix of shallow/deep water exists once you
-	# actually go looking for it. Scans a 600x600 area (well past
+	# A grid scan, not random sampling -- deep water is a fairly narrow band
+	# within a lake that plain random points can miss entirely, but CLAUDE.md's
+	# own testing notes confirm a real mix of shallow/deep water exists once
+	# you actually go looking for it. Scans a 600x600 area (well past
 	# PLAINS_RADIUS, where water can first appear) at an 8-unit step.
 	var found_water := false
 	var found_deep := false
@@ -261,21 +260,16 @@ func test_tint_for_wetness_is_continuous_within_the_shore_and_water_zones() -> v
 		w += 0.02
 
 
-func test_river_and_lake_samples_route_their_tint_through_the_shared_wetness_curve() -> void:
-	# Guards against either source's tint drifting back to an independently
-	# -shaped curve (the actual bug behind "we can still see the river
-	# edges in the lake" -- see water_sample_at's own header): whatever
+func test_lake_samples_route_their_tint_through_the_shared_wetness_curve() -> void:
+	# Guards against _lake_water_sample's tint drifting back to an
+	# independently-shaped curve (the shape of the original bug this shared
+	# curve fixed, back when real water still had a second river source to
+	# disagree with -- see _tint_for_wetness_colored's own header): whatever
 	# wetness a sample reports, its tint must be exactly what
 	# _tint_for_wetness produces for that same wetness value.
 	for i in 50:
 		var x: float = randf_range(-2000.0, 2000.0)
 		var z: float = randf_range(-2000.0, 2000.0)
-		var river: Dictionary = Biomes._river_water_sample(x, z)
-		var expected_river_tint: Color = Biomes._tint_for_wetness(river.wetness)
-		assert_float(river.tint.r).is_equal_approx(expected_river_tint.r, 0.0001)
-		assert_float(river.tint.g).is_equal_approx(expected_river_tint.g, 0.0001)
-		assert_float(river.tint.b).is_equal_approx(expected_river_tint.b, 0.0001)
-
 		var lake: Dictionary = Biomes._lake_water_sample(x, z)
 		var expected_lake_tint: Color = Biomes._tint_for_wetness(lake.wetness)
 		assert_float(lake.tint.r).is_equal_approx(expected_lake_tint.r, 0.0001)
@@ -363,6 +357,36 @@ func test_is_any_liquid_at_matches_water_lava_or_oil() -> void:
 		var z: float = randf_range(-2000.0, 2000.0)
 		var expected: bool = Biomes.is_water_at(x, z) or Biomes.is_lava_at(x, z) or Biomes.is_oil_at(x, z)
 		assert_bool(Biomes.is_any_liquid_at(x, z)).is_equal(expected)
+
+
+func test_water_lava_and_oil_never_overlap() -> void:
+	# The three-way zone partition (see this file's own header) guarantees
+	# at most one of these three is ever true at the same position, by
+	# construction -- checked here as a real invariant (see feature request:
+	# "lakes and rivers and oil and lava SHOULD NOT overlap") rather than
+	# assumed from reading the gating logic. A dense grid scan (not just
+	# random sampling) so the rarer Lava/Oil zones actually get exercised at
+	# least once, not just the much more common "none of the three" case.
+	var half := 1000.0
+	var step := 8.0
+	var x := -half
+	var checked_an_active_case := false
+	while x <= half:
+		var z := -half
+		while z <= half:
+			var active_count := 0
+			if Biomes.is_water_at(x, z):
+				active_count += 1
+			if Biomes.is_lava_at(x, z):
+				active_count += 1
+			if Biomes.is_oil_at(x, z):
+				active_count += 1
+			assert_int(active_count).is_less_equal(1)
+			if active_count == 1:
+				checked_an_active_case = true
+			z += step
+		x += step
+	assert_bool(checked_an_active_case).is_true()
 
 
 func test_hazard_sample_at_is_neutral_within_plains_radius() -> void:
