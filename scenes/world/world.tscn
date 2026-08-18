@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://kw8ovq1qk74x"]
+[gd_scene load_steps=17 format=3 uid="uid://kw8ovq1qk74x"]
 
 [ext_resource type="Script" path="res://scripts/world/world.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/camera_rig.gd" id="2"]
@@ -14,6 +14,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/chest_panel.tscn" id="13"]
 [ext_resource type="PackedScene" path="res://scenes/ui/village_panel.tscn" id="14"]
 [ext_resource type="PackedScene" path="res://scenes/ui/slot_machine_panel.tscn" id="15"]
+[ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="16"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 
@@ -65,3 +66,5 @@ current = true
 [node name="VillagePanel" parent="." instance=ExtResource("14")]
 
 [node name="SlotMachinePanel" parent="." instance=ExtResource("15")]
+
+[node name="PauseMenu" parent="." instance=ExtResource("16")]

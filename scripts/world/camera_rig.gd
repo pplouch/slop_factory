@@ -53,7 +53,7 @@ func _process(delta: float) -> void:
 		move.x += 1.0
 	if move != Vector2.ZERO:
 		var speed_mult := SHIFT_SPEED_MULTIPLIER if (Input.is_physical_key_pressed(KEY_SHIFT)) else 1.0
-		move = move.normalized() * PAN_SPEED * speed_mult * delta
+		move = move.normalized() * PAN_SPEED * Settings.camera_pan_speed * speed_mult * delta
 		var forward := -transform.basis.z
 		forward.y = 0.0
 		forward = forward.normalized()
@@ -86,4 +86,4 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_MIDDLE:
 			_rotating_with_mouse = event.pressed
 	elif event is InputEventMouseMotion and _rotating_with_mouse:
-		rotation.y -= event.relative.x * MOUSE_ROTATE_SENSITIVITY
+		rotation.y -= event.relative.x * MOUSE_ROTATE_SENSITIVITY * Settings.mouse_rotate_sensitivity
