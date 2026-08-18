@@ -8,10 +8,17 @@ extends Control
 ## scene-load round trip just to browse a menu.
 
 const WORLD_SCENE_PATH := "res://scenes/world/world.tscn"
+## See feature request: "add a new scene accessible from the main menu:
+## debug scene" -- a flat, non-chunked scene pre-populated with a whole
+## "factory town" (every building kind, several belt/wall-and-gate
+## configurations, a scattered crowd of blobs) for eyeballing/interacting
+## with new meshes and configurations without waiting on real progression.
+const DEBUG_SCENE_PATH := "res://scenes/world/debug_scene.tscn"
 
 @onready var start_button: Button = $VBox/StartButton
 @onready var upgrades_button: Button = $VBox/UpgradesButton
 @onready var options_button: Button = $VBox/OptionsButton
+@onready var debug_scene_button: Button = $VBox/DebugSceneButton
 @onready var quit_button: Button = $VBox/QuitButton
 @onready var upgrades_panel = $UpgradesPanel
 @onready var options_panel = $OptionsPanel
@@ -22,6 +29,7 @@ func _ready() -> void:
 	start_button.pressed.connect(_on_start_pressed)
 	upgrades_button.pressed.connect(upgrades_panel.open_panel)
 	options_button.pressed.connect(options_panel.open_panel)
+	debug_scene_button.pressed.connect(_on_debug_scene_pressed)
 	quit_button.pressed.connect(get_tree().quit)
 	MetaProgression.changed.connect(_refresh_prestige_label)
 	_refresh_prestige_label()
@@ -35,3 +43,6 @@ func _refresh_prestige_label() -> void:
 
 func _on_start_pressed() -> void:
 	get_tree().change_scene_to_file(WORLD_SCENE_PATH)
+
+func _on_debug_scene_pressed() -> void:
+	get_tree().change_scene_to_file(DEBUG_SCENE_PATH)
