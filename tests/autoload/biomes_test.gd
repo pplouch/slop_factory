@@ -171,3 +171,113 @@ func test_enemy_and_resource_multipliers_stay_within_their_documented_extremes()
 		var z: float = randf_range(-4000.0, 4000.0)
 		assert_float(Biomes.enemy_difficulty_multiplier_at(x, z)).is_between(1.0, Biomes.MAX_ENEMY_DIFFICULTY_MULT)
 		assert_float(Biomes.resource_abundance_multiplier_at(x, z)).is_between(Biomes.MIN_RESOURCE_ABUNDANCE_MULT, 1.0)
+
+
+func test_water_depth_factor_at_is_zero_within_water_safe_radius() -> void:
+	assert_float(Biomes.water_depth_factor_at(1.0, 1.0)).is_equal(0.0)
+
+
+func test_water_depth_factor_at_stays_within_unit_range_across_many_samples() -> void:
+	for i in 200:
+		var x: float = randf_range(-2000.0, 2000.0)
+		var z: float = randf_range(-2000.0, 2000.0)
+		assert_float(Biomes.water_depth_factor_at(x, z)).is_between(0.0, 1.0)
+
+
+func test_water_depth_factor_at_is_zero_outside_water_and_saturates_deep_inside_it() -> void:
+	# Scans a grid the same way test_deep_water_implies_water_and_both_are_
+	# actually_findable does (random sampling too easily misses rivers'
+	# narrow bands) -- everywhere is_water_at is false, depth must be
+	# exactly 0 (dry land never gets wave treatment, and neither source
+	# contributes anything for water_sample_at's blend to soften); everywhere
+	# is_deep_water_at is true, depth must have very nearly saturated to 1
+	# (Biomes.is_deep_water_at is defined as a strictly tighter threshold
+	# than the point where each source's own smoothstep reaches 1). "Very
+	# nearly" rather than exactly: water_sample_at blends river/lake by a
+	# normalized strength rather than a hard max (see its own header on why
+	# -- avoiding a seam where a river's own noise coincidentally grazes an
+	# unrelated lake), so a point that's deep in one source but also
+	# borderline-close in the OTHER source's own band can land a fraction of
+	# a percent under 1.0 rather than exactly at it -- a deliberate side
+	# effect of real blending, not a regression, so this tolerance is loose
+	# enough to allow it while still catching an actual saturation failure.
+	var half := 300.0
+	var step := 8.0
+	var x := -half
+	var checked_dry := false
+	var checked_deep := false
+	while x <= half:
+		var z := -half
+		while z <= half:
+			if not Biomes.is_water_at(x, z):
+				assert_float(Biomes.water_depth_factor_at(x, z)).is_equal(0.0)
+				checked_dry = true
+			elif Biomes.is_deep_water_at(x, z):
+				assert_float(Biomes.water_depth_factor_at(x, z)).is_equal_approx(1.0, 0.02)
+				checked_deep = true
+			z += step
+		x += step
+	assert_bool(checked_dry).is_true()
+	assert_bool(checked_deep).is_true()
+
+
+func test_tint_for_wetness_endpoints_match_dry_land_and_full_depth() -> void:
+	var dry := Biomes._tint_for_wetness(0.0)
+	assert_float(dry.r).is_equal_approx(Color.WHITE.r, 0.001)
+	assert_float(dry.g).is_equal_approx(Color.WHITE.g, 0.001)
+	assert_float(dry.b).is_equal_approx(Color.WHITE.b, 0.001)
+
+	var deep := Biomes._tint_for_wetness(1.0)
+	assert_float(deep.r).is_equal_approx(Biomes.DEEP_WATER_TINT_COLOR.r, 0.001)
+	assert_float(deep.g).is_equal_approx(Biomes.DEEP_WATER_TINT_COLOR.g, 0.001)
+	assert_float(deep.b).is_equal_approx(Biomes.DEEP_WATER_TINT_COLOR.b, 0.001)
+
+
+func test_tint_for_wetness_is_continuous_within_the_shore_and_water_zones() -> void:
+	# _tint_for_wetness deliberately keeps a crisp sand-to-water color
+	# change right at SHORE_WETNESS (a beach line reasonably reads as a
+	# real material change, same as it did before either source was routed
+	# through this shared curve -- not the bug this pass actually fixed,
+	# which was river/lake *disagreeing with each other* out in open water,
+	# not the shore itself having a visible edge). Continuity is checked
+	# within each zone separately rather than across that one intentional
+	# boundary.
+	var previous: Color = Biomes._tint_for_wetness(0.0)
+	var w := 0.02
+	while w < Biomes.SHORE_WETNESS:
+		var current: Color = Biomes._tint_for_wetness(w)
+		var delta: float = absf(current.r - previous.r) + absf(current.g - previous.g) + absf(current.b - previous.b)
+		assert_float(delta).is_less(0.1)
+		previous = current
+		w += 0.02
+
+	previous = Biomes._tint_for_wetness(Biomes.SHORE_WETNESS)
+	w = Biomes.SHORE_WETNESS + 0.02
+	while w <= 1.5:
+		var current: Color = Biomes._tint_for_wetness(w)
+		var delta: float = absf(current.r - previous.r) + absf(current.g - previous.g) + absf(current.b - previous.b)
+		assert_float(delta).is_less(0.1)
+		previous = current
+		w += 0.02
+
+
+func test_river_and_lake_samples_route_their_tint_through_the_shared_wetness_curve() -> void:
+	# Guards against either source's tint drifting back to an independently
+	# -shaped curve (the actual bug behind "we can still see the river
+	# edges in the lake" -- see water_sample_at's own header): whatever
+	# wetness a sample reports, its tint must be exactly what
+	# _tint_for_wetness produces for that same wetness value.
+	for i in 50:
+		var x: float = randf_range(-2000.0, 2000.0)
+		var z: float = randf_range(-2000.0, 2000.0)
+		var river: Dictionary = Biomes._river_water_sample(x, z)
+		var expected_river_tint: Color = Biomes._tint_for_wetness(river.wetness)
+		assert_float(river.tint.r).is_equal_approx(expected_river_tint.r, 0.0001)
+		assert_float(river.tint.g).is_equal_approx(expected_river_tint.g, 0.0001)
+		assert_float(river.tint.b).is_equal_approx(expected_river_tint.b, 0.0001)
+
+		var lake: Dictionary = Biomes._lake_water_sample(x, z)
+		var expected_lake_tint: Color = Biomes._tint_for_wetness(lake.wetness)
+		assert_float(lake.tint.r).is_equal_approx(expected_lake_tint.r, 0.0001)
+		assert_float(lake.tint.g).is_equal_approx(expected_lake_tint.g, 0.0001)
+		assert_float(lake.tint.b).is_equal_approx(expected_lake_tint.b, 0.0001)

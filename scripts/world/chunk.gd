@@ -11,10 +11,15 @@ extends Node3D
 ## just a visual pop.
 
 const CHUNK_SIZE := 25.0
-## Higher than a bare-minimum grid needs, so river/lake edges (see
-## Biomes.is_water_at) blend reasonably smoothly instead of in blocky
-## quantized steps -- terrain relief is purely cosmetic either way (see
-## _build_ground_mesh), so the extra vertices are cheap.
+## Governs the smoothness of the (purely cosmetic) height/biome-color
+## terrain relief baked into vertex data (see _build_ground_mesh) -- water's
+## own coastline/shore edge used to also ride on this same per-vertex
+## resolution and aliased badly (see feature request: "coastlines are
+## straight... unorganic squared coast") wherever the underlying noise
+## crossed its threshold within less than one vertex spacing; that's now
+## baked into a dedicated, much finer non-tiling per-chunk texture instead
+## (see WATER_MASK_SIZE/_build_ground_material), so this constant no longer
+## needs to be pushed higher just for water's sake.
 const SUBDIVISIONS := 10
 ## Doubled twice now from the original 32 (see feature backlog: "smooth and
 ## improve terrain texture", then the "looks low-resolution" pass that also
@@ -75,19 +80,6 @@ const ENEMY_VILLAGE_SCENE: PackedScene = preload("res://scenes/world_objects/ene
 const SLOT_MACHINE_CHANCE := 0.05
 const SLOT_MACHINE_SCENE: PackedScene = preload("res://scenes/world_objects/slot_machine.tscn")
 
-## Lakes are placed procedurally (see Biomes.is_lake_at) rather than at a
-## flat per-chunk chance -- a chunk only gets a harvestable water source if
-## one of a few sampled points inside it actually lands on lake terrain, so
-## water reads as following the same broad lakes the ground tinting shows
-## instead of scattering puddles anywhere. Rivers used to also spawn a
-## small "puddle" pond (`water_pond.tscn`) at any crossing, removed since
-## the river itself already reads as water via the ground's own tint/shore-
-## foam shader (see Biomes.water_tint_at/shore_factor_at) without needing a
-## separate harvestable object cluttering every crossing -- Lake remains
-## the sole harvestable "water" resource_type source.
-const WATER_PLACEMENT_ATTEMPTS := 6
-const LAKE_SCENE: PackedScene = preload("res://scenes/world_objects/lake.tscn")
-
 var biome: Biomes.Biome
 var chunk_coord: Vector2i
 
@@ -106,7 +98,6 @@ func generate(coord: Vector2i, p_biome: Biomes.Biome) -> void:
 	_scatter_resources()
 	_scatter_props()
 	_spawn_ambient_particles()
-	_maybe_spawn_water()
 	if randf() < ANIMAL_CHANCE:
 		var count := randi_range(1, 3)
 		for i in count:
@@ -143,27 +134,25 @@ func _build_ground() -> void:
 ## UVs), displaces only its vertices' Y using the shared, world-space-
 ## sampled Biomes.height_at (so height agrees with whatever any neighboring
 ## chunk already computed for the same border vertex), and tints vertices
-## with `Biomes.blended_ground_color_at(...) * Biomes.water_tint_at(...)` --
-## the former a continuously-blended biome color (see that function's own
-## header on why this needs to be a per-*vertex* value rather than baked
-## into the chunk's own tiled procedural texture: a texture repeats within
-## one chunk and so can never carry a whole-chunk-spanning gradient, while
-## vertex colors interpolate smoothly and agree exactly with a neighboring
-## chunk's own mesh at their shared border, since both sample the same
-## continuous world-space function), the latter white on dry land, smoothly
-## blending through a sandy shore ring and into shallow/deep water as the
-## underlying noise approaches and passes its water threshold (see feature
-## backlog: "water ridge should have a texture on the borders to make it
-## more realistic") -- multiplying the two together means water still reads
-## as its own tint near the shore (water_tint_at dominates there) while dry
-## land shows the smooth biome blend (water_tint_at is pure white away from
-## water, a no-op multiply). Both are purely cosmetic terrain relief/color --
+## with `Biomes.blended_ground_color_at(...)` -- a continuously-blended
+## biome color (see that function's own header on why this needs to be a
+## per-*vertex* value rather than baked into the chunk's own tiled
+## procedural texture: a texture repeats within one chunk and so can never
+## carry a whole-chunk-spanning gradient, while vertex colors interpolate
+## smoothly and agree exactly with a neighboring chunk's own mesh at their
+## shared border, since both sample the same continuous world-space
+## function). Water's own tint/shore/wave data used to also ride on this
+## same per-vertex color (multiplied in here) but that aliased badly at the
+## water's edge (see feature request: "coastlines... unorganic squared
+## coast") -- it's baked into a separate, much finer non-tiling texture
+## instead now (see WATER_MASK_SIZE/_build_ground_material), sampled
+## per-pixel by ground.gdshader directly from this same mesh's local VERTEX
+## position rather than through vertex color, so this function no longer
+## needs to touch water at all. Purely cosmetic terrain relief/color --
 ## Blob/Enemy's global_position.y stays force-clamped to 0.0 every physics
 ## frame regardless (see CLAUDE.md: "this project has no vertical
 ## gameplay"), so this never has to agree with unit footing, just look
-## pleasant from the RTS camera angle. Vertex-color alpha separately carries
-## Biomes.shore_factor_at -- unused by anything reading the tint as a
-## color, but read by ground.gdshader as its animated-foam mask.
+## pleasant from the RTS camera angle.
 func _build_ground_mesh() -> ArrayMesh:
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(CHUNK_SIZE, CHUNK_SIZE)
@@ -181,10 +170,7 @@ func _build_ground_mesh() -> ArrayMesh:
 		var world_z := global_position.z + v.z
 		var height: float = Biomes.height_at(world_x, world_z)
 		vertices[i] = Vector3(v.x, height, v.z)
-		var biome_blend: Color = Biomes.blended_ground_color_at(world_x, world_z)
-		var tint: Color = Biomes.water_tint_at(world_x, world_z)
-		var shore: float = Biomes.shore_factor_at(world_x, world_z)
-		colors[i] = Color(biome_blend.r * tint.r, biome_blend.g * tint.g, biome_blend.b * tint.b, shore)
+		colors[i] = Biomes.blended_ground_color_at(world_x, world_z)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_COLOR] = colors
 
@@ -205,6 +191,19 @@ func _build_ground_mesh() -> ArrayMesh:
 ## brightness variation, the same way a real terrain shader separates a
 ## grayscale detail/roughness texture from a vertex-painted base color.
 const TEXTURE_NEUTRAL_BASE := Color(0.92, 0.92, 0.92)
+
+## Resolution of the water tint/shore/wave-depth bake below -- far coarser
+## than TEXTURE_SIZE (this data doesn't need per-texel grain, just enough
+## resolution that the water/land edge doesn't visibly facet), but still
+## roughly 6x finer per world unit than the old per-vertex approach (one
+## sample every 2.5 world units at SUBDIVISIONS=10) that used to alias badly
+## at the water's edge (see feature request: "coastlines... unorganic
+## squared coast"). Sampled by ground.gdshader directly from this mesh's own
+## local VERTEX.xz (unaffected by the chunk node's own world transform, so
+## it lines up exactly with the world-space positions this loop samples)
+## rather than through the uv_scale-tiled UV the grain texture uses, so one
+## texture maps exactly once onto one chunk instead of repeating.
+const WATER_MASK_SIZE := 64
 
 ## Builds a small procedurally-mottled *grayscale* texture (light/dark noise
 ## bands around TEXTURE_NEUTRAL_BASE, the same "generate an Image by hand"
@@ -288,11 +287,38 @@ func _build_ground_material() -> ShaderMaterial:
 	var tex := ImageTexture.create_from_image(img)
 	var normal_tex := ImageTexture.create_from_image(normal_img)
 
+	# Water tint/shore-foam/wave-depth masks (Biomes.water_sample_at, which
+	# already internally combines river/lake into one consistent result --
+	# see that function's own header) baked at WATER_MASK_SIZE resolution
+	# instead of per-vertex (see that const's own header) -- each texel
+	# samples the exact same world-space function the old vertex loop did,
+	# just at far finer spacing, so the coastline reads as smooth instead of
+	# following the mesh's own coarse vertex grid. One water_sample_at call
+	# per texel (rather than the three separate Biomes calls this used to
+	# make) also means river/lake noise is only sampled once here instead of
+	# three times.
+	var water_tint_img := Image.create(WATER_MASK_SIZE, WATER_MASK_SIZE, false, Image.FORMAT_RGB8)
+	var water_wave_img := Image.create(WATER_MASK_SIZE, WATER_MASK_SIZE, false, Image.FORMAT_RGB8)
+	for wy in WATER_MASK_SIZE:
+		var local_z: float = (float(wy) / float(WATER_MASK_SIZE - 1) - 0.5) * CHUNK_SIZE
+		for wx in WATER_MASK_SIZE:
+			var local_x: float = (float(wx) / float(WATER_MASK_SIZE - 1) - 0.5) * CHUNK_SIZE
+			var world_x := global_position.x + local_x
+			var world_z := global_position.z + local_z
+			var sample: Dictionary = Biomes.water_sample_at(world_x, world_z)
+			water_tint_img.set_pixel(wx, wy, sample.tint)
+			water_wave_img.set_pixel(wx, wy, Color(sample.shore, sample.depth, 0.0))
+	var water_tint_tex := ImageTexture.create_from_image(water_tint_img)
+	var water_wave_tex := ImageTexture.create_from_image(water_wave_img)
+
 	var mat := ShaderMaterial.new()
 	mat.shader = GROUND_SHADER
 	mat.set_shader_parameter("albedo_texture", tex)
 	mat.set_shader_parameter("normal_texture", normal_tex)
+	mat.set_shader_parameter("water_tint_texture", water_tint_tex)
+	mat.set_shader_parameter("water_wave_texture", water_wave_tex)
 	mat.set_shader_parameter("uv_scale", Vector2(4.0, 4.0))
+	mat.set_shader_parameter("chunk_size", CHUNK_SIZE)
 	return mat
 
 ## Scatters a handful of small resource clusters using this chunk's
@@ -315,9 +341,18 @@ func _scatter_resources() -> void:
 			continue
 		var count := maxi(1, roundi(randi_range(RESOURCE_CLUSTER_COUNT_RANGE.x, RESOURCE_CLUSTER_COUNT_RANGE.y) * abundance))
 		for i in count:
+			var local := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+			# A tree/rock/ore floating in a river or lake reads as a clear
+			# placement bug (see feature request: "resources cannot be
+			# placed on water") -- skipped rather than retried, same
+			# no-retry convention _maybe_spawn_chest/_maybe_spawn_village
+			# already use, so a biome bordering a lot of water just ends up
+			# with a slightly thinner cluster instead of resampling forever.
+			if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
+				continue
 			var inst: Node3D = entry.scene.instantiate()
 			add_child(inst)
-			inst.position = Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
+			inst.position = local
 			inst.rotation.y = randf() * TAU
 			var s := randf_range(0.85, 1.25)
 			inst.scale = Vector3(s, s, s)
@@ -340,25 +375,6 @@ func _spawn_ambient_particles() -> void:
 	var particles := AmbientParticles.build_for_biome(biome.id, half)
 	add_child(particles)
 	particles.position = Vector3(0.0, 1.2, 0.0)
-
-## Tries a few random points within this chunk (see WATER_PLACEMENT_ATTEMPTS)
-## and, the first time one actually lands on lake terrain (see
-## Biomes.is_lake_at), spawns a harvestable Lake there. Most chunks sample
-## none and get no water source at all, since lakes are a localized
-## procedural feature rather than a flat chance anywhere -- a river
-## crossing a chunk no longer spawns anything here (see WATER_PLACEMENT_ATTEMPTS'
-## own comment), it's purely the ground's own tint/shore-foam doing the work.
-func _maybe_spawn_water() -> void:
-	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
-	for attempt in WATER_PLACEMENT_ATTEMPTS:
-		var local := Vector3(randf_range(-half, half), 0.0, randf_range(-half, half))
-		var world_x := global_position.x + local.x
-		var world_z := global_position.z + local.z
-		if Biomes.is_lake_at(world_x, world_z):
-			var inst: Node3D = LAKE_SCENE.instantiate()
-			add_child(inst)
-			inst.position = local
-			return
 
 ## Spawns one instance of `scene` at a random point within this chunk.
 func _spawn_one(scene: PackedScene) -> void:

@@ -29,6 +29,9 @@ const THREE_OF_A_KIND_PAYOUT := {
 ## three reels the same, including for a jackpot pair.
 const PAIR_PAYOUT_FRACTION := 0.25
 
+@onready var _lever: MeshInstance3D = $Lever
+@onready var _screen_glow: OmniLight3D = $ScreenGlow
+
 
 ## Godot lifecycle hook: makes this machine discoverable/clickable (see
 ## SelectionManager.handle_click_select).
@@ -43,7 +46,14 @@ func can_afford_spin() -> bool:
 ## Spends SPIN_COST wood, rolls 3 reels, and grants whatever they pay out
 ## (see _evaluate) -- returns a no-op empty result (no symbols, no payout)
 ## if the spin couldn't even be paid for, so SlotMachinePanel can tell "you
-## can't afford this" apart from "you spun and lost."
+## can't afford this" apart from "you spun and lost." The actual reel-spin
+## reveal animation lives entirely in SlotMachinePanel (this stays a plain,
+## instant, synchronous result so the economy/RNG resolve in one call with
+## no exploit window) -- this function only plays the machine's own
+## in-world flourish (lever pull always, a particle burst/glow pulse on a
+## win, bigger for a jackpot) since that's cosmetic to the 3D object itself
+## rather than the 2D reveal (see feature request: "Slot machine UI...
+## filled with VFX and animation, like a real slot machine").
 func spin() -> Dictionary:
 	if not GameManager.try_spend("wood", SPIN_COST):
 		return {"symbols": [], "payout": {}}
@@ -51,9 +61,31 @@ func spin() -> Dictionary:
 	var payout := _evaluate(symbols)
 	for resource_type in payout.keys():
 		GameManager.add_resource(resource_type, payout[resource_type])
+	var is_jackpot: bool = symbols.size() == 3 and symbols[0] == "jackpot" and symbols[1] == "jackpot" and symbols[2] == "jackpot"
+	_play_lever_tween()
 	if not payout.is_empty():
+		Effects.spawn_impact(get_parent(), global_position + Vector3(0.0, 1.0, 0.0), Color(1.0, 0.85, 0.3, 1.0), 14 if is_jackpot else 8)
 		Effects.spawn_command_marker(get_parent(), global_position + Vector3(0.0, 0.05, 0.0), Color(1.0, 0.85, 0.3, 1.0))
-	return {"symbols": symbols, "payout": payout}
+		_play_win_glow(is_jackpot)
+	return {"symbols": symbols, "payout": payout, "is_jackpot": is_jackpot}
+
+## Tweens the lever further down and springs it back with an elastic
+## overshoot -- fired on every spin (win or lose) so the machine itself
+## always visibly reacts to being played, not just on a payout.
+func _play_lever_tween() -> void:
+	var rest_rotation: float = _lever.rotation.z
+	var tween := create_tween()
+	tween.tween_property(_lever, "rotation:z", rest_rotation + 0.9, 0.15).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tween.tween_property(_lever, "rotation:z", rest_rotation, 0.4).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+
+## Pulses the screen's glow light on any win -- brighter and longer for a
+## jackpot than an ordinary pair/three-of-a-kind, since a jackpot is meant
+## to read as the rare, exciting outcome the payout table already makes it.
+func _play_win_glow(is_jackpot: bool) -> void:
+	var rest_energy: float = _screen_glow.light_energy
+	var tween := create_tween()
+	tween.tween_property(_screen_glow, "light_energy", 4.5 if is_jackpot else 2.5, 0.1)
+	tween.tween_property(_screen_glow, "light_energy", rest_energy, 0.5 if is_jackpot else 0.3)
 
 ## Rolls one weighted-random symbol per reel (see SYMBOLS/SYMBOL_WEIGHTS).
 func _roll_reels() -> Array:

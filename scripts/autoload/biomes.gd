@@ -310,28 +310,135 @@ func is_deep_water_at(world_x: float, world_z: float) -> bool:
 ## the same noise fields is_river_at/is_lake_at/is_deep_water_at already
 ## classify booleans from, so the visual boundary always agrees with the
 ## gameplay one (Chunk used to tint every water vertex the same flat color;
-## used by Chunk._build_ground_mesh for its vertex colors).
+## used by Chunk._build_ground_mesh for its vertex colors). Thin wrapper
+## around water_sample_at -- see that function's own header for why river/
+## lake need to be combined rather than either one checked first.
 func water_tint_at(world_x: float, world_z: float) -> Color:
+	var sample: Dictionary = water_sample_at(world_x, world_z)
+	return sample.tint
+
+## river_noise/lake_noise are independent fields sampled purely by world
+## position -- a point can satisfy both a river's is_river_at band and a
+## lake's is_lake_at threshold at once, entirely by coincidence (a long
+## winding river's own noise band numerically grazing a totally unrelated
+## lake somewhere along its path). water_tint_at/shore_factor_at/
+## water_depth_factor_at used to each independently check river first and
+## return whatever it said, regardless of what lake said at that same point
+## -- harmless when only one was actually active, but wherever both
+## coincided it let a river's own shallow/shore tint (or foam, or wave data)
+## cut a visible seam straight through what should have read as one
+## uniform, much deeper lake (see feature request: "rivers and lakes are
+## overlapping... merge them"). This single function is the shared source
+## of truth all three now delegate to: it always computes both sources'
+## full tint/shore/depth independently (each one's own formulas already
+## clamp to a neutral white/0/0 far from its own feature, so there's no
+## need to gate this on an "is either active" check first) and blends
+## between them by a normalized "how confidently/deeply water" signal per
+## source, so whichever source is actually relevant at this exact point
+## dominates smoothly instead of a hard, arbitrary "whichever was checked
+## first" cutover.
+func water_sample_at(world_x: float, world_z: float) -> Dictionary:
 	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
-		return Color.WHITE
+		return {"tint": Color.WHITE, "shore": 0.0, "depth": 0.0}
 
+	var river := _river_water_sample(world_x, world_z)
+	var lake := _lake_water_sample(world_x, world_z)
+	# A "far away" wetness drops without bound as distance from that
+	# source's own threshold grows (see the two helpers below), so this
+	# comparison always saturates toward whichever source is genuinely near
+	# a feature here -- and where neither is near anything, both sides of
+	# every lerp below are already the same neutral (white, 0, 0), so the
+	# exact blend weight stops mattering at all. Blend band is narrow (0.1)
+	# since wetness is on a shared, comparable 0..1-ish scale for both
+	# sources now (see _river_water_sample/_lake_water_sample's own header
+	# on why that wasn't true of the "strength" value an earlier version of
+	# this blend used).
+	var blend: float = clamp(smoothstep(-0.1, 0.1, lake.wetness - river.wetness), 0.0, 1.0)
+	return {
+		"tint": river.tint.lerp(lake.tint, blend),
+		"shore": lerp(river.shore, lake.shore, blend),
+		"depth": lerp(river.depth, lake.depth, blend),
+	}
+
+## 0..1(+) "wetness" -> tint, shared identically by both
+## _river_water_sample/_lake_water_sample rather than each source computing
+## its own independently-shaped tint curve -- the fix for a real bug found
+## after water_sample_at's initial "which source wins" fix (see feature
+## request: "we can still see the river edges in the lake"): even once
+## dominance blends smoothly by whichever source has the higher `wetness`,
+## the two sources' *tint* values at the crossover point (wetness_river ==
+## wetness_lake) could still disagree substantially, because river's old
+## tint-saturation curve was calibrated in raw noise units against
+## RIVER_HALF_WIDTH * DEEP_RIVER_FRACTION while lake's was calibrated
+## against DEEP_LAKE_MARGIN -- two completely different scales that
+## happened to share a normalization denominator with the *dominance*
+## comparison but not with each other's actual color output. Routing both
+## sources through this one shared function means wherever their wetness
+## values coincide (exactly the blend crossover condition), their tints
+## already agree too, by construction, rather than needing to separately
+## verify two independently-tuned curves happen to match.
+## SHORE_WETNESS marks "right at the water line" in this shared 0..1(+)
+## scale: below it is the sandy shore ring (0 = the shore band's outer,
+## driest edge), at/above it is shallow-to-deep water (1.0 = the
+## is_deep_water_at threshold, continuing to extrapolate past 1 toward a
+## source's own visual center for a still-darkening deep tint).
+const SHORE_WETNESS := 0.4
+
+func _tint_for_wetness(wetness: float) -> Color:
+	if wetness < SHORE_WETNESS:
+		var shore_t: float = smoothstep(0.0, SHORE_WETNESS, wetness)
+		return Color.WHITE.lerp(SHORE_TINT_COLOR, shore_t)
+	var deep_t: float = smoothstep(SHORE_WETNESS, 1.0, wetness)
+	return SHALLOW_WATER_TINT_COLOR.lerp(DEEP_WATER_TINT_COLOR, deep_t)
+
+## One source's (river's) tint/shore/depth/wetness at `world_x`/`world_z` --
+## see water_sample_at's header for `wetness`'s role, and _tint_for_wetness
+## for the shared curve it's fed into. Well-behaved (neutral tint/shore/
+## depth, wetness saturating below 0) everywhere far from any river, not
+## just within RIVER_HALF_WIDTH + RIVER_SHORE_BAND, since every branch below
+## is already a clamped smoothstep/absf ratio.
+func _river_water_sample(world_x: float, world_z: float) -> Dictionary:
 	var river_n := absf(river_noise.get_noise_2d(world_x, world_z))
-	if river_n < RIVER_HALF_WIDTH + RIVER_SHORE_BAND:
-		if river_n >= RIVER_HALF_WIDTH:
-			var shore_t: float = smoothstep(RIVER_HALF_WIDTH + RIVER_SHORE_BAND, RIVER_HALF_WIDTH, river_n)
-			return Color.WHITE.lerp(SHORE_TINT_COLOR, shore_t)
-		var deep_t: float = smoothstep(RIVER_HALF_WIDTH * DEEP_RIVER_FRACTION, 0.0, river_n)
-		return SHALLOW_WATER_TINT_COLOR.lerp(DEEP_WATER_TINT_COLOR, deep_t)
+	var shore: float = clamp(1.0 - absf(river_n - RIVER_HALF_WIDTH) / RIVER_SHORE_BAND, 0.0, 1.0)
+	var depth := 0.0
+	if river_n < RIVER_HALF_WIDTH:
+		depth = smoothstep(RIVER_HALF_WIDTH, RIVER_HALF_WIDTH * DEEP_RIVER_FRACTION, river_n)
 
+	var wetness: float
+	if river_n >= RIVER_HALF_WIDTH:
+		# Shore band: 0 at the outer (dry) edge -> SHORE_WETNESS right at
+		# the water line.
+		var shore_span: float = clamp(1.0 - (river_n - RIVER_HALF_WIDTH) / RIVER_SHORE_BAND, 0.0, 1.0)
+		wetness = shore_span * SHORE_WETNESS
+	else:
+		# Interior: SHORE_WETNESS at the water line -> 1.0 at the deep
+		# threshold, extrapolating past 1.0 toward the river's own center
+		# (river_n == 0) for a tint that keeps darkening slightly past the
+		# gameplay deep-water cutoff.
+		var deep_span: float = RIVER_HALF_WIDTH - RIVER_HALF_WIDTH * DEEP_RIVER_FRACTION
+		var deep_progress: float = (RIVER_HALF_WIDTH - river_n) / deep_span
+		wetness = SHORE_WETNESS + deep_progress * (1.0 - SHORE_WETNESS)
+
+	return {"tint": _tint_for_wetness(wetness), "shore": shore, "depth": depth, "wetness": wetness}
+
+## Lake's own counterpart to _river_water_sample -- see water_sample_at's
+## header.
+func _lake_water_sample(world_x: float, world_z: float) -> Dictionary:
 	var lake_n := lake_noise.get_noise_2d(world_x, world_z)
-	if lake_n > LAKE_THRESHOLD - LAKE_SHORE_BAND:
-		if lake_n < LAKE_THRESHOLD:
-			var shore_t: float = smoothstep(LAKE_THRESHOLD - LAKE_SHORE_BAND, LAKE_THRESHOLD, lake_n)
-			return Color.WHITE.lerp(SHORE_TINT_COLOR, shore_t)
-		var deep_t: float = smoothstep(LAKE_THRESHOLD, LAKE_THRESHOLD + DEEP_LAKE_MARGIN, lake_n)
-		return SHALLOW_WATER_TINT_COLOR.lerp(DEEP_WATER_TINT_COLOR, deep_t)
+	var shore: float = clamp(1.0 - absf(lake_n - LAKE_THRESHOLD) / LAKE_SHORE_BAND, 0.0, 1.0)
+	var depth := 0.0
+	if lake_n > LAKE_THRESHOLD:
+		depth = smoothstep(LAKE_THRESHOLD, LAKE_THRESHOLD + DEEP_LAKE_MARGIN, lake_n)
 
-	return Color.WHITE
+	var wetness: float
+	if lake_n <= LAKE_THRESHOLD:
+		var shore_span: float = clamp(1.0 - (LAKE_THRESHOLD - lake_n) / LAKE_SHORE_BAND, 0.0, 1.0)
+		wetness = shore_span * SHORE_WETNESS
+	else:
+		var deep_progress: float = (lake_n - LAKE_THRESHOLD) / DEEP_LAKE_MARGIN
+		wetness = SHORE_WETNESS + deep_progress * (1.0 - SHORE_WETNESS)
+
+	return {"tint": _tint_for_wetness(wetness), "shore": shore, "depth": depth, "wetness": wetness}
 
 ## Whether `world_x`/`world_z` is a rare volcanic hotspot, checked before
 ## the temperature/humidity climate grid.
@@ -429,15 +536,20 @@ func resource_abundance_multiplier_at(world_x: float, world_z: float) -> float:
 ## into ground-mesh vertex-color alpha by Chunk (see
 ## Chunk._build_ground_mesh), since the shader itself has no noise access.
 func shore_factor_at(world_x: float, world_z: float) -> float:
-	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
-		return 0.0
+	var sample: Dictionary = water_sample_at(world_x, world_z)
+	return sample.shore
 
-	var river_n := absf(river_noise.get_noise_2d(world_x, world_z))
-	if river_n < RIVER_HALF_WIDTH + RIVER_SHORE_BAND:
-		return clamp(1.0 - absf(river_n - RIVER_HALF_WIDTH) / RIVER_SHORE_BAND, 0.0, 1.0)
-
-	var lake_n := lake_noise.get_noise_2d(world_x, world_z)
-	if lake_n > LAKE_THRESHOLD - LAKE_SHORE_BAND:
-		return clamp(1.0 - absf(lake_n - LAKE_THRESHOLD) / LAKE_SHORE_BAND, 0.0, 1.0)
-
-	return 0.0
+## How far "into" water `world_x`/`world_z` is, 0..1 -- 0.0 on dry land and
+## right at the water line, rising smoothly through the shallow band and
+## saturating at 1.0 by the same is_deep_water_at threshold (see
+## DEEP_RIVER_FRACTION/DEEP_LAKE_MARGIN) rather than peaking-then-fading like
+## shore_factor_at. Read per-pixel (not per-vertex, see Chunk.WATER_MASK_SIZE)
+## by ground.gdshader to grow its wave normal-perturbation with distance from
+## shore (see feature request: "small flat waves that fit the coast shape...
+## add waves farther from the coast" -- the opposite of what a peaked shore
+## mask alone could drive). Thin wrapper around water_sample_at -- see that
+## function's own header for why river/lake need to be combined rather than
+## either one checked first.
+func water_depth_factor_at(world_x: float, world_z: float) -> float:
+	var sample: Dictionary = water_sample_at(world_x, world_z)
+	return sample.depth

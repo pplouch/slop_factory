@@ -84,5 +84,6 @@ Seven backlog passes have landed so far. Each is its own historical record under
 - [Feature backlog 5](docs/history/backlog-5-visual-polish.md) — textures/props/water shaders/ambient VFX pass.
 - [Feature backlog 6](docs/history/backlog-6-night-debug-tests.md) — torches/building lights, debug menu additions, the minimap `clip_contents` fix, and the gdUnit4 test suite.
 - [Feature backlog 7](docs/history/backlog-7-worldgen-water-difficulty.md) — removed the river-crossing water ponds, smoothly-blended biome-color transitions, a distance-based difficulty layer (rarer resources/tougher enemies farther out), and real vertex-wave water with a richer shoreline.
+- [Feature backlog 8](docs/history/backlog-8-coastlines-and-minigame-vfx.md) — fixed the jagged/blocky coastlines backlog 7's own vertex-color approach still had, merged overlapping river/lake seams, swapped shore/deep-water wave placement, removed the Lake resource node entirely, stopped resources from spawning on water, and gave Chest/SlotMachine real animation and VFX.
 
 If the player hands over a new list, start a fresh file under `docs/history/` rather than growing this file.
