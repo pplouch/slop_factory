@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://bas1vs7m0ne1n"
+path="res://.godot/imported/conveyor-stripe-part-end.obj-d17fa3a1479b45fb8608df51284f6468.mesh"
+
+[deps]
+
+files=["res://.godot/imported/conveyor-stripe-part-end.obj-d17fa3a1479b45fb8608df51284f6468.mesh"]
+
+source_file="res://assets/Models/OBJ format/conveyor-stripe-part-end.obj"
+dest_files=["res://.godot/imported/conveyor-stripe-part-end.obj-d17fa3a1479b45fb8608df51284f6468.mesh", "res://.godot/imported/conveyor-stripe-part-end.obj-d17fa3a1479b45fb8608df51284f6468.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

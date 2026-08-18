@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://dkqjf3ccsi3jd"
+path="res://.godot/imported/structure-window-wide.obj-5a245689b5ca0e232cffa40c2d647de4.mesh"
+
+[deps]
+
+files=["res://.godot/imported/structure-window-wide.obj-5a245689b5ca0e232cffa40c2d647de4.mesh"]
+
+source_file="res://assets/Models/OBJ format/structure-window-wide.obj"
+dest_files=["res://.godot/imported/structure-window-wide.obj-5a245689b5ca0e232cffa40c2d647de4.mesh", "res://.godot/imported/structure-window-wide.obj-5a245689b5ca0e232cffa40c2d647de4.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

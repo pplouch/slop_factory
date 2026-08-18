@@ -26,13 +26,16 @@ extends LinkableBuilding
 ##
 ## Only links visually to Wall (see _links_to below), not to another Gate --
 ## matches the feature request's own wording ("linkable to a wall only").
+##
+## The real visible archway -- a Kenney "wall-doorway" module (see
+## assets/Models/FBX format/wall-doorway.fbx, ext_resource "PostModel"
+## below), the same base wall module Wall itself now uses but with a real
+## opening built in, at the identical 1.8 scale-to-cell-size Wall uses (see
+## wall.gd's own header on why its bundled flat-color trim-sheet texture is
+## overridden with our own tuned StandardMaterial3D instead of used as-is).
 
-@onready var _post_left: MeshInstance3D = $PostLeft
-@onready var _post_right: MeshInstance3D = $PostRight
-@onready var _lintel: MeshInstance3D = $Lintel
-@onready var _post_left_base_position: Vector3 = _post_left.position
-@onready var _post_right_base_position: Vector3 = _post_right.position
-@onready var _lintel_base_position: Vector3 = _lintel.position
+@onready var _post_mesh: MeshInstance3D = $"PostModel/wall-doorway"
+@onready var _post_base_position: Vector3 = _post_mesh.position
 
 @onready var _connectors := {
 	"pos_x": $ConnectorPosX,
@@ -58,16 +61,9 @@ func _ready() -> void:
 	_apply_construction_visual(0.0)
 
 ## Template Method hook (see BuildableStructure._apply_construction_visual):
-## both posts scale and reposition as they rise, same as Wall's single
-## post; the lintel bar only repositions (see "scales": false) so it drops
-## into place at full size once the posts are tall enough, rather than
-## visually squashing flat the way scaling it too would.
+## a single mesh that both scales and repositions as it rises, same as Wall.
 func _construction_meshes() -> Array:
-	return [
-		{"mesh": _post_left, "base_position": _post_left_base_position},
-		{"mesh": _post_right, "base_position": _post_right_base_position},
-		{"mesh": _lintel, "base_position": _lintel_base_position, "scales": false},
-	]
+	return [{"mesh": _post_mesh, "base_position": _post_base_position}]
 
 ## Template Method hook (see LinkableBuilding.refresh_connections): only
 ## reads as "a gap in the wall" when flanked by actual Wall pieces (see this

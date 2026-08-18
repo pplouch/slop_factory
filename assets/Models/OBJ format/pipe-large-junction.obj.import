@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://cmot6mgbr5vgx"
+path="res://.godot/imported/pipe-large-junction.obj-2ecde077a4b5555ebbd76ac9a5c5bd14.mesh"
+
+[deps]
+
+files=["res://.godot/imported/pipe-large-junction.obj-2ecde077a4b5555ebbd76ac9a5c5bd14.mesh"]
+
+source_file="res://assets/Models/OBJ format/pipe-large-junction.obj"
+dest_files=["res://.godot/imported/pipe-large-junction.obj-2ecde077a4b5555ebbd76ac9a5c5bd14.mesh", "res://.godot/imported/pipe-large-junction.obj-2ecde077a4b5555ebbd76ac9a5c5bd14.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

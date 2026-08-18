@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://vbux7pv6dvjm"
+path="res://.godot/imported/ladder-color.obj-6ae6c6028de2ea7b80f8f642a74916ff.mesh"
+
+[deps]
+
+files=["res://.godot/imported/ladder-color.obj-6ae6c6028de2ea7b80f8f642a74916ff.mesh"]
+
+source_file="res://assets/Models/OBJ format/ladder-color.obj"
+dest_files=["res://.godot/imported/ladder-color.obj-6ae6c6028de2ea7b80f8f642a74916ff.mesh", "res://.godot/imported/ladder-color.obj-6ae6c6028de2ea7b80f8f642a74916ff.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

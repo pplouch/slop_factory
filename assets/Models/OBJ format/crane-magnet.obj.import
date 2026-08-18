@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://b5in457x3oa5x"
+path="res://.godot/imported/crane-magnet.obj-1ba24750417ded4cfedfc0f56e5dadd4.mesh"
+
+[deps]
+
+files=["res://.godot/imported/crane-magnet.obj-1ba24750417ded4cfedfc0f56e5dadd4.mesh"]
+
+source_file="res://assets/Models/OBJ format/crane-magnet.obj"
+dest_files=["res://.godot/imported/crane-magnet.obj-1ba24750417ded4cfedfc0f56e5dadd4.mesh", "res://.godot/imported/crane-magnet.obj-1ba24750417ded4cfedfc0f56e5dadd4.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

@@ -1,6 +1,7 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/factory/wall.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/Models/FBX format/wall.fbx" id="2"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_stone"]
 albedo_color = Color(0.55, 0.52, 0.48, 1)
@@ -8,10 +9,6 @@ roughness = 0.9
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_post"]
 size = Vector3(2.0, 1.6, 2.0)
-
-[sub_resource type="BoxMesh" id="BoxMesh_post"]
-material = SubResource("StandardMaterial3D_stone")
-size = Vector3(0.5, 1.6, 0.5)
 
 [sub_resource type="BoxMesh" id="BoxMesh_connector"]
 material = SubResource("StandardMaterial3D_stone")
@@ -26,9 +23,11 @@ script = ExtResource("1")
 position = Vector3(0, 0.8, 0)
 shape = SubResource("BoxShape3D_post")
 
-[node name="Post" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.8, 0)
-mesh = SubResource("BoxMesh_post")
+[node name="PostModel" parent="." instance=ExtResource("2")]
+transform = Transform3D(1.8, 0, 0, 0, 1.8, 0, 0, 0, 1.8, 0, 0, 0)
+
+[node name="wall" parent="PostModel" index="0"]
+surface_material_override/0 = SubResource("StandardMaterial3D_stone")
 
 [node name="ConnectorPosX" type="MeshInstance3D" parent="."]
 position = Vector3(1.0, 0.65, 0)

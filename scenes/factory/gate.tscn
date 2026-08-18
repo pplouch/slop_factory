@@ -1,10 +1,7 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/factory/gate.gd" id="1"]
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wood"]
-albedo_color = Color(0.42, 0.28, 0.15, 1)
-roughness = 0.85
+[ext_resource type="PackedScene" path="res://assets/Models/FBX format/wall-doorway.fbx" id="2"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_stone"]
 albedo_color = Color(0.55, 0.52, 0.48, 1)
@@ -12,14 +9,6 @@ roughness = 0.9
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_full_cell"]
 size = Vector3(2.0, 1.6, 2.0)
-
-[sub_resource type="BoxMesh" id="BoxMesh_post"]
-material = SubResource("StandardMaterial3D_wood")
-size = Vector3(0.35, 1.6, 0.35)
-
-[sub_resource type="BoxMesh" id="BoxMesh_lintel"]
-material = SubResource("StandardMaterial3D_wood")
-size = Vector3(0.35, 0.3, 1.5)
 
 [sub_resource type="BoxMesh" id="BoxMesh_connector"]
 material = SubResource("StandardMaterial3D_stone")
@@ -34,18 +23,11 @@ script = ExtResource("1")
 position = Vector3(0, 0.8, 0)
 shape = SubResource("BoxShape3D_full_cell")
 
-[node name="PostLeft" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.8, -0.75)
-mesh = SubResource("BoxMesh_post")
+[node name="PostModel" parent="." instance=ExtResource("2")]
+transform = Transform3D(1.8, 0, 0, 0, 1.8, 0, 0, 0, 1.8, 0, 0, 0)
 
-[node name="PostRight" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.8, 0.75)
-mesh = SubResource("BoxMesh_post")
-
-[node name="Lintel" type="MeshInstance3D" parent="."]
-position = Vector3(0, 1.55, 0)
-rotation_degrees = Vector3(0, 90, 0)
-mesh = SubResource("BoxMesh_lintel")
+[node name="wall-doorway" parent="PostModel" index="0"]
+surface_material_override/0 = SubResource("StandardMaterial3D_stone")
 
 [node name="ConnectorPosX" type="MeshInstance3D" parent="."]
 position = Vector3(1.0, 0.65, 0)

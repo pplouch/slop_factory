@@ -26,7 +26,22 @@ extends LinkableBuilding
 ## collider), but Enemy has no pathing and walks straight at its target --
 ## this was the actual cause of enemies passing through fences.
 
-@onready var _post_mesh: MeshInstance3D = $Post
+## The real visible post -- a Kenney "wall" module (see assets/Models/FBX
+## format/wall.fbx, ext_resource "PostModel" below) instead of the plain
+## BoxMesh this used to be (see feature request: "there are a lot of
+## buildings parts meshes... use them to enhance the game visuals").
+## Its own bundled material/colormap.png is a flat-color "trim sheet" (every
+## mesh in this kit UV-maps into a solid-color swatch, no actual surface
+## detail baked in) rather than a real stone texture, and this particular
+## mesh happens to map into a plain white swatch -- so wall.tscn overrides
+## its material with our own tuned StandardMaterial3D (see
+## surface_material_override/0 on the nested "wall" node there) instead of
+## fighting the kit's own palette-texture UVs to land on the right color.
+## PostModel itself carries the scale-to-cell-size transform; this reaches
+## one level into its own instanced scene for the actual MeshInstance3D
+## _apply_construction_visual needs to rise/reposition, which composes fine
+## on top of PostModel's own separate scale regardless.
+@onready var _post_mesh: MeshInstance3D = $PostModel/wall
 @onready var _post_base_position: Vector3 = _post_mesh.position
 
 @onready var _connectors := {
