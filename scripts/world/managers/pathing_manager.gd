@@ -82,6 +82,30 @@ func compute_path(from: Vector3, to: Vector3) -> Array:
 		waypoints.append(BuildingManager.grid_to_world(cell))
 	return waypoints
 
+## Whether at least one valid route exists from `from` to `to` at all --
+## either a clear straight line, or a real A*-grid path. Distinct from
+## compute_path's own return value on purpose: an empty Array from
+## compute_path means "already clear, no waypoints needed" in the common
+## case, but AStarGrid2D.get_id_path *also* returns an empty Array when
+## `to` is genuinely unreachable (e.g. fully enclosed by solid cells) --
+## the two are indistinguishable from compute_path's result alone, which
+## let a blob's own approach-point selection walk straight at a point it
+## could never actually reach (see feature request: "unit surrounded by
+## unbuilt walls... struggles to find the next building to build"). Meant
+## for exactly that kind of check-before-you-commit call, not as a
+## replacement for compute_path itself.
+func is_reachable(from: Vector3, to: Vector3) -> bool:
+	if _has_clear_line(from, to):
+		return true
+	var from_cell := BuildingManager.world_to_grid(from)
+	var to_cell := BuildingManager.world_to_grid(to)
+	if not _grid.is_in_boundsv(from_cell) or not _grid.is_in_boundsv(to_cell):
+		return false
+	if _grid.is_point_solid(to_cell):
+		return false
+	var cell_path: Array = _grid.get_id_path(from_cell, to_cell)
+	return not cell_path.is_empty()
+
 ## Samples points along the straight line from `from` to `to` and checks
 ## whether any of them fall in a solid pathing cell -- used to skip
 ## grid-based pathing entirely for the common case where nothing's in the way.

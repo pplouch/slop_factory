@@ -38,7 +38,7 @@ Quick orientation if you just need the shape of the place:
 
 - `scripts/`/`scenes/` mirror each other by domain: `core/` (base classes + stateless helpers, no autoload), `autoload/` (the 6 singletons below), `world/` (the single main scene + its managers under `world/managers/`), `units/blob/` + `units/enemy/`, `world_objects/` (harvestable scenery), `buildings/` (tech-tree-gated structures), `factory/` (grid pieces), `ui/` (every panel), `vfx/` (transient effects).
 - The 6 autoloads: `GameManager` (resource stockpile, upgrades, population cap, tech-tree unlock state), `Effects` (the sole factory for VFX/SFX + resource-color mapping), `BlobKinds`/`EnemyKinds`/`BuildingKinds` (data-driven Registry-pattern kind catalogs), `Biomes` (the 7 biomes + every world-gen noise field), `MetaProgression` (the one autoload that persists to disk).
-- `world.gd` has no `class_name`, isn't a singleton — every `BuildableStructure`/`Wall`/`Extractor`/etc. reaches it via `get_parent()` and calls `compute_path`/`register_structure`/`get_structure_at`/`world_to_grid`/`grid_to_world` directly, duck-typed. Those five methods are a thin forwarding facade into whichever manager now owns them; **any manager refactor must preserve this facade** exactly.
+- `world.gd` has no `class_name`, isn't a singleton — every `BuildableStructure`/`Wall`/`Extractor`/etc. reaches it via `get_parent()` and calls `compute_path`/`register_structure`/`get_structure_at`/`world_to_grid`/`grid_to_world`/`is_reachable` directly, duck-typed. Those six methods are a thin forwarding facade into whichever manager now owns them; **any manager refactor must preserve this facade** exactly.
 
 ## Code style and design patterns
 

@@ -302,7 +302,7 @@ func command_harvest(node: Node, approach_angle: float = -1.0) -> void:
 	pending_harvest_node = node
 	pending_build_target = null
 	_approach_angle = approach_angle if approach_angle >= 0.0 else randf() * TAU
-	_set_destination(_approach_point(node.global_position, _approach_angle))
+	_set_destination(_reachable_approach_point(node.global_position, _approach_angle))
 	_transition_to(MovingState.new())
 	_acknowledge_order()
 
@@ -315,7 +315,7 @@ func command_build(building: Node, approach_angle: float = -1.0) -> void:
 	pending_harvest_node = null
 	pending_build_target = building
 	_approach_angle = approach_angle if approach_angle >= 0.0 else randf() * TAU
-	_set_destination(_approach_point(building.global_position, _approach_angle, BUILD_APPROACH_RADIUS))
+	_set_destination(_reachable_approach_point(building.global_position, _approach_angle, BUILD_APPROACH_RADIUS))
 	_transition_to(MovingState.new())
 	_acknowledge_order()
 
@@ -403,6 +403,36 @@ func _advance_along_path() -> void:
 func _approach_point(target: Vector3, angle: float, radius: float = APPROACH_RADIUS) -> Vector3:
 	var jittered_angle := angle + randf_range(-0.15, 0.15)
 	return target + Vector3(cos(jittered_angle), 0.0, sin(jittered_angle)) * radius
+
+## Same as _approach_point, but checks (via World.is_reachable, duck-typed
+## like every other pathing call) that this blob can actually get there
+## from where it's standing right now, trying a spread of alternate angles
+## around `target` if the requested one turns out to be walled off --
+## e.g. a build order's evenly-spaced angle happening to point toward the
+## *outside* of a pen this blob is already standing inside, with every
+## wall of that pen (built or not -- see BuildingManager.try_place_structure,
+## which marks a cell pathing-solid the instant it's placed, well before
+## construction finishes) already blocking the grid (see feature request:
+## "unit surrounded by unbuilt walls... struggles to find the next
+## building to build"). Falls back to the originally-requested point if
+## none of the alternates are reachable either -- no worse than the old
+## always-blind behavior in that case, with stall-detection/detour still
+## the last-resort backstop it always was.
+const APPROACH_FALLBACK_ANGLE_STEP := PI / 4.0
+const APPROACH_FALLBACK_ATTEMPTS := 7
+func _reachable_approach_point(target: Vector3, angle: float, radius: float = APPROACH_RADIUS) -> Vector3:
+	var world = get_parent()
+	var primary := _approach_point(target, angle, radius)
+	if not (world and world.has_method("is_reachable")):
+		return primary
+	if world.is_reachable(global_position, primary):
+		return primary
+	for i in range(1, APPROACH_FALLBACK_ATTEMPTS + 1):
+		var alt_angle: float = angle + APPROACH_FALLBACK_ANGLE_STEP * i
+		var candidate := _approach_point(target, alt_angle, radius)
+		if world.is_reachable(global_position, candidate):
+			return candidate
+	return primary
 
 ## Plays a quick squash-and-recover animation on the torso, giving visible
 ## feedback the instant an order is accepted (in addition to the ring
@@ -509,7 +539,14 @@ func _is_blocked_near_target() -> bool:
 ## to break a head-on stall against an obstacle. Each detour attempt that
 ## doesn't resolve the stall (tracked via _consecutive_detours) escalates
 ## the distance and duration of the next one, in case the first nudge
-## wasn't enough to clear whatever it's stuck on.
+## wasn't enough to clear whatever it's stuck on. Tries a spread of
+## candidate directions (not just a blind 50/50 left/right coin flip) and
+## picks the first one _detour_candidate_is_clear doesn't flag as already
+## occupied by another blob/enemy body -- a dense crowd (e.g. several units
+## packed in a small pen) could otherwise have the coin flip keep landing
+## on/through a neighbor every single attempt, forever re-stalling instead
+## of actually escaping (see feature request: "unit surrounded by other
+## units gets stuck").
 func _start_detour() -> void:
 	var to_target := final_target - global_position
 	to_target.y = 0.0
@@ -518,9 +555,36 @@ func _start_detour() -> void:
 	_consecutive_detours += 1
 	var escalation: float = 1.0 + min(_consecutive_detours, 4) * 0.6
 	var dir := to_target.normalized()
-	var side := Vector3(-dir.z, 0.0, dir.x) * (1.0 if randf() < 0.5 else -1.0)
-	move_target = global_position + side * DETOUR_SIDE_DISTANCE * escalation + dir * 1.0
+	var side := Vector3(-dir.z, 0.0, dir.x)
+	var candidate_dirs: Array = [
+		side, -side,
+		side.rotated(Vector3.UP, -PI / 4.0), -side.rotated(Vector3.UP, PI / 4.0),
+		side.rotated(Vector3.UP, PI / 4.0), -side.rotated(Vector3.UP, -PI / 4.0),
+	]
+	candidate_dirs.shuffle()
+	var chosen: Vector3 = candidate_dirs[0]
+	for candidate_dir in candidate_dirs:
+		var candidate_pos: Vector3 = global_position + candidate_dir * DETOUR_SIDE_DISTANCE * escalation + dir * 1.0
+		if _detour_candidate_is_clear(candidate_pos):
+			chosen = candidate_dir
+			break
+	move_target = global_position + chosen * DETOUR_SIDE_DISTANCE * escalation + dir * 1.0
 	_detour_timer = DETOUR_DURATION * escalation
+
+## Whether `pos` is far enough (DETOUR_CLEARANCE_RADIUS) from every other
+## blob's and enemy's current position -- both are on collision layers this
+## blob's own body physically collides with (see project.godot's
+## [layer_names] and blob.tscn's collision_mask), so a detour destination
+## that lands on top of one wouldn't actually clear the stall at all.
+const DETOUR_CLEARANCE_RADIUS := 0.9
+func _detour_candidate_is_clear(pos: Vector3) -> bool:
+	for group in ["blobs", "enemies"]:
+		for other in get_tree().get_nodes_in_group(group):
+			if other == self or not is_instance_valid(other):
+				continue
+			if other.global_position.distance_to(pos) < DETOUR_CLEARANCE_RADIUS:
+				return false
+	return true
 
 ## Called by HarvestingState once its inventory is full or the node is
 ## dry: finds the nearest building and heads for its SpawnPoint (an open

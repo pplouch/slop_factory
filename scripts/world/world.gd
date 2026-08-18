@@ -291,6 +291,9 @@ func raycast(screen_pos: Vector2, mask: int) -> Dictionary:
 func compute_path(from: Vector3, to: Vector3) -> Array:
 	return _pathing_manager.compute_path(from, to)
 
+func is_reachable(from: Vector3, to: Vector3) -> bool:
+	return _pathing_manager.is_reachable(from, to)
+
 func grid_to_world(cell: Vector2i) -> Vector3:
 	return BuildingManager.grid_to_world(cell)
 
