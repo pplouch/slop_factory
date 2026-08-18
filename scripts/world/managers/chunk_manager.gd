@@ -42,6 +42,23 @@ const CHUNK_LOAD_RADIUS := 3
 ## ensure_chunks_loaded would just regenerate it again next check anyway.
 const CHUNK_UNLOAD_RADIUS := 6
 const CHUNK_CHECK_INTERVAL := 0.5
+## How many newly-needed chunks actually get generated per real frame once
+## the camera moves and the surrounding grid changes (see process()'s own
+## call to _generate_queued_chunks) -- generating a whole newly-uncovered
+## row/column of chunks synchronously in one frame (each a from-scratch
+## procedural ground-texture + normal-map bake, see Chunk._build_ground_material)
+## was a real, measured ~0.5s freeze on every chunk-boundary crossing (see
+## feature request: "moving the camera, the game freeze... make the loading
+## and unloading more smooth"). Spreading that work across several frames
+## instead keeps each individual frame's added cost small enough not to read
+## as a stutter, at the cost of a newly-revealed chunk very briefly popping
+## in a few frames later rather than instantly -- an acceptable tradeoff,
+## same "safe/unnoticeable direction" this project already accepts elsewhere
+## (see e.g. ResourceNode.restore_state's respawn-timer note). Unloading is
+## deliberately left unthrottled: _unload_chunk is just a state snapshot plus
+## queue_free(), nowhere near generation's measured cost, so there was
+## nothing there worth spreading out.
+const MAX_CHUNK_GENERATIONS_PER_FRAME := 1
 
 ## Chunk coordinate (Vector2i) -> the generated Chunk node there. Read
 ## externally by SpawnManager (picks a random already-loaded chunk to spawn
@@ -59,6 +76,14 @@ var _chunk_deltas: Dictionary = {}
 ## Coordinates permanently excluded from _unload_far_chunks -- see this
 ## file's own header on why a Village pins its chunk forever.
 var _pinned_coords: Dictionary = {}
+## Coordinates known to still need generating, nearest-to-focus first (see
+## _queue_missing_chunks) -- drained a few at a time every frame by
+## _generate_queued_chunks (see MAX_CHUNK_GENERATIONS_PER_FRAME's own header
+## for why). Distinct from ensure_chunks_loaded's own fully-synchronous
+## behavior, which is left untouched for World's one-time scene-startup call
+## and this file's test suite -- both want the whole surrounding grid ready
+## immediately, not streamed in over several frames.
+var _pending_coords: Array = []
 
 var _world: Node3D
 var _check_timer := 0.0
@@ -67,14 +92,18 @@ var _check_timer := 0.0
 func setup(world: Node3D) -> void:
 	_world = world
 
-## Called from World._process every frame; only actually re-checks chunk
-## coverage every CHUNK_CHECK_INTERVAL seconds, not every single frame.
+## Called from World._process every frame. Actually re-checks chunk coverage
+## (queuing newly-needed chunks, unloading far ones) only every
+## CHUNK_CHECK_INTERVAL seconds, but drains a few pending chunk generations
+## every single frame regardless, so a batch queued on one check spreads
+## smoothly across the many frames before the next one.
 func process(delta: float, focus_position: Vector3) -> void:
 	_check_timer -= delta
 	if _check_timer <= 0.0:
 		_check_timer = CHUNK_CHECK_INTERVAL
-		ensure_chunks_loaded(focus_position)
+		_queue_missing_chunks(focus_position)
 		_unload_far_chunks(focus_position)
+	_generate_queued_chunks()
 
 ## Generates every chunk within CHUNK_LOAD_RADIUS of `around_world_pos` that
 ## isn't already loaded. Cheap to call repeatedly -- a no-op dictionary
@@ -87,6 +116,42 @@ func ensure_chunks_loaded(around_world_pos: Vector3) -> void:
 			var coord := center_coord + Vector2i(dx, dy)
 			if not loaded_chunks.has(coord):
 				_generate_chunk(coord)
+
+## Recomputes which chunks within CHUNK_LOAD_RADIUS of `around_world_pos`
+## still need generating, replacing whatever was left over from the last
+## check interval outright -- no point finishing a stale request for a chunk
+## the focus has since moved away from again, since the very next check will
+## just recompute it fresh anyway. Sorted nearest-to-focus first so
+## _generate_queued_chunks's low per-frame budget always prioritizes whatever
+## is closest to actually entering view.
+func _queue_missing_chunks(around_world_pos: Vector3) -> void:
+	var center_coord := _world_pos_to_chunk_coord(around_world_pos)
+	var needed: Array = []
+	for dy in range(-CHUNK_LOAD_RADIUS, CHUNK_LOAD_RADIUS + 1):
+		for dx in range(-CHUNK_LOAD_RADIUS, CHUNK_LOAD_RADIUS + 1):
+			var coord := center_coord + Vector2i(dx, dy)
+			if not loaded_chunks.has(coord):
+				needed.append(coord)
+	needed.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var offset_a := a - center_coord
+		var offset_b := b - center_coord
+		return offset_a.x * offset_a.x + offset_a.y * offset_a.y < offset_b.x * offset_b.x + offset_b.y * offset_b.y
+	)
+	_pending_coords = needed
+
+## Generates up to MAX_CHUNK_GENERATIONS_PER_FRAME chunks off the front of
+## _pending_coords -- called every frame (not just every CHUNK_CHECK_INTERVAL)
+## so a freshly-queued batch drains smoothly across many frames instead of
+## the single frame it was queued on. Re-checks loaded_chunks per coord since
+## a direct ensure_chunks_loaded call elsewhere could have generated it
+## already while it sat queued here.
+func _generate_queued_chunks() -> void:
+	var generated := 0
+	while generated < MAX_CHUNK_GENERATIONS_PER_FRAME and not _pending_coords.is_empty():
+		var coord: Vector2i = _pending_coords.pop_front()
+		if not loaded_chunks.has(coord):
+			_generate_chunk(coord)
+		generated += 1
 
 ## Frees every loaded chunk more than CHUNK_UNLOAD_RADIUS away from
 ## `around_world_pos`, except one pinned by _pinned_coords or one
