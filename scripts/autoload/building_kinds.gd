@@ -134,6 +134,18 @@ func _ready() -> void:
 		[],
 		8.0, Color(0.55, 0.52, 0.48), "stone"
 	))
+	# Gate (see scripts/factory/gate.gd): visually a gap in a wall line
+	# (only links to Wall, not another Gate) that blobs path straight
+	# through while enemies still can't -- seeded unlocked alongside Wall
+	# itself (see GameManager.unlocked_buildings) since it's a companion
+	# piece to basic defensive infrastructure, not a separate tech tier.
+	_register(Kind.new(
+		"gate", "Gate", "res://scenes/factory/gate.tscn", 12,
+		[], [], 0, "",
+		70, [],
+		[],
+		9.0, Color(0.42, 0.28, 0.15), "stone"
+	))
 	_register(Kind.new(
 		"belt", "Belt", "res://scenes/factory/belt_segment.tscn", 5,
 		[], [], 0, "",

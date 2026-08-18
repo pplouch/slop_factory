@@ -88,6 +88,7 @@ var upgrade_levels: Dictionary = {
 var unlocked_buildings: Dictionary = {
 	"town_hall": true,
 	"wall": true,
+	"gate": true,
 	"belt": true,
 	"road": true,
 }

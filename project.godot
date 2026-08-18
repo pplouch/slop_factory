@@ -49,6 +49,7 @@ enabled=PackedStringArray("res://addons/gdUnit4/plugin.cfg")
 3d_physics/layer_2="Blobs"
 3d_physics/layer_3="Resources"
 3d_physics/layer_4="Enemies"
+3d_physics/layer_5="GateBarrier"
 
 [physics]
 
