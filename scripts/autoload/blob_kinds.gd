@@ -45,11 +45,15 @@ class Kind:
 	## Another BlobKinds id that must already be unlocked first, or "" for
 	## no prerequisite -- lets kinds form a simple unlock chain (see _ready).
 	var requires: String
+	## Whether this kind fights at range with a fireball spell instead of a
+	## melee swing (see Blob._update_combat/_cast_fireball) -- "mage" is the
+	## only kind with this set, for the moment the game's only spell.
+	var casts_fireball: bool
 
 	func _init(p_id: String, p_name: String, p_cost: int, p_speed: float, p_capacity: float,
 			p_harvest: float, p_scale: float, p_hue: float, p_sat: float, p_val: float,
 			p_trait_description: String = "", p_build_mult: float = 1.0,
-			p_unlock_cost: int = 0, p_requires: String = "") -> void:
+			p_unlock_cost: int = 0, p_requires: String = "", p_casts_fireball: bool = false) -> void:
 		id = p_id
 		display_name = p_name
 		hire_cost = p_cost
@@ -64,6 +68,7 @@ class Kind:
 		build_mult = p_build_mult
 		unlock_cost = p_unlock_cost
 		requires = p_requires
+		casts_fireball = p_casts_fireball
 
 	## Short "Spd 1.6x Cap 0.6x Pwr 0.8x" style summary for hire-menu rows.
 	func stat_summary() -> String:
@@ -81,9 +86,10 @@ class Kind:
 ## speed, haulers trade speed for capacity, brutes trade speed for harvest
 ## power. Only "worker" is available from the start (see
 ## GameManager.unlocked_blob_kinds); the rest form a simple knowledge-gated
-## unlock chain -- scout, then hauler, then brute, then builder, then hero
-## -- so new archetypes open up "over time" as the player researches rather
-## than all being hireable immediately (see feature backlog).
+## unlock chain -- scout, then hauler, then brute, then builder, then hero,
+## then mage -- so new archetypes open up "over time" as the player
+## researches rather than all being hireable immediately (see feature
+## backlog).
 func _ready() -> void:
 	_default_id = "worker"
 	_register(Kind.new("worker", "Worker", 15, 1.0, 1.0, 1.0, 1.0, 0.55, 0.45, 0.95,
@@ -109,6 +115,14 @@ func _ready() -> void:
 	_register(Kind.new("hero", "Hero", 45, 1.1, 1.5, 2.2, 1.15, 0.85, 0.7, 1.0,
 		"Elite combat specialist -- highest attack power and toughness of any unit. Special aptitudes coming later.", 1.0,
 		80, "builder"))
+	# casts_fireball=true routes this kind's combat through Blob._cast_fireball
+	# instead of a melee swing (see Blob._update_combat) -- fights from
+	# CAST_RANGE away rather than ATTACK_RANGE, at the cost of the lowest
+	# health/capacity of any combat-capable kind, a fragile-glass-cannon
+	# tradeoff for standing off at range instead of trading blows up close.
+	_register(Kind.new("mage", "Mage", 55, 0.95, 0.75, 1.3, 1.0, 0.78, 0.6, 0.95,
+		"Casts fireballs from range instead of melee -- hits hard from a distance but is fragile up close.", 1.0,
+		100, "hero", true))
 
 ## Thin covariant override: keeps callers' `var kind := BlobKinds.get_kind(id)`
 ## statically typed as `Kind` (with BlobKinds' own fields) rather than the

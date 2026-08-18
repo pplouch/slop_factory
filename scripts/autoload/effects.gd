@@ -23,6 +23,7 @@ const FLOATING_TEXT_SCENE: PackedScene = preload("res://scenes/vfx/floating_text
 const IMPACT_PARTICLES_SCENE: PackedScene = preload("res://scenes/vfx/impact_particles.tscn")
 const COMMAND_MARKER_SCENE: PackedScene = preload("res://scenes/vfx/command_marker.tscn")
 const RESOURCE_ITEM_SCENE: PackedScene = preload("res://scenes/factory/resource_item.tscn")
+const FIREBALL_SCENE: PackedScene = preload("res://scenes/vfx/fireball.tscn")
 
 const CHIRP_MIX_RATE := 22050
 const CHIRP_DURATION := 0.14
@@ -113,6 +114,19 @@ func spawn_resource_item(parent: Node, global_pos: Vector3, resource_type: Strin
 	parent.add_child(item)
 	item.global_position = global_pos
 	return item
+
+## Spawns a fireball (currently the only spell in the game) that flies from
+## `from_pos` to `target`'s live position and deals `damage` on arrival,
+## crediting `attacker` -- used by any Blob/Enemy kind flagged as a caster
+## instead of the plain melee swing every other kind uses (see
+## Blob._cast_fireball/Enemy._cast_fireball).
+func spawn_fireball(parent: Node, from_pos: Vector3, target: Node, damage: float, attacker: Node) -> void:
+	var fireball: Node3D = FIREBALL_SCENE.instantiate()
+	fireball.damage = damage
+	fireball.attacker = attacker
+	fireball.target = target
+	parent.add_child(fireball)
+	fireball.global_position = from_pos
 
 ## Maps a resource type name to the color used to represent it in VFX and
 ## popup text. Falls back to white for any type without a dedicated look.

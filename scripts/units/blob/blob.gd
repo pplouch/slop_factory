@@ -44,6 +44,10 @@ const APPROACH_RADIUS := 1.15
 ## not just APPROACH_RADIUS's tight 1.15.
 const BUILD_APPROACH_RADIUS := 2.2
 const ATTACK_RANGE := 1.3
+## Engagement range for a casting kind (see casts_fireball) -- far beyond
+## melee's ATTACK_RANGE, since the whole point of a spellcaster is fighting
+## from a distance instead of trading blows up close.
+const CAST_RANGE := 7.0
 
 # -- Stall recovery tuning (see _update_stall_detection / _start_detour) --
 const PROGRESS_CHECK_INTERVAL := 0.25
@@ -92,6 +96,10 @@ var harvest_interval: float = BASE_HARVEST_INTERVAL
 var build_rate: float = BASE_BUILD_RATE
 var attack_power: float = BASE_ATTACK_POWER
 var attack_interval: float = BASE_ATTACK_INTERVAL
+## Whether this blob fights with a ranged fireball spell instead of a melee
+## swing (see BlobKinds.Kind.casts_fireball) -- refreshed alongside every
+## other stat in _refresh_stats, so a hired Mage picks this up immediately.
+var casts_fireball: bool = false
 
 ## XP gained from killing enemies (see Enemy._on_death) and the level it's
 ## accumulated into so far -- purely tracked/displayed for now, with no
@@ -222,6 +230,7 @@ func _refresh_stats() -> void:
 	health_regen = BASE_HEALTH_REGEN
 	max_health = max(1.0, BASE_MAX_HEALTH * kind.capacity_mult)
 	health = min(health, max_health)
+	casts_fireball = kind.casts_fireball
 
 ## Colors and sizes this blob according to its BlobKinds archetype (a
 ## per-instance hue jitter keeps same-kind blobs distinguishable from each
@@ -579,18 +588,33 @@ func _clear_inventory() -> void:
 	inventory.clear()
 
 ## Auto-defense: on a cooldown independent of whatever job this blob is
-## doing, swings at the nearest enemy within ATTACK_RANGE if there is one.
-## Deliberately reactive rather than proactive -- see the file header.
+## doing, engages the nearest enemy within range if there is one --
+## ATTACK_RANGE and an instant melee hit for every ordinary kind, or
+## CAST_RANGE and a homing Fireball (see _cast_fireball) for a Mage (see
+## casts_fireball). Deliberately reactive rather than proactive -- see the
+## file header.
 func _update_combat(delta: float) -> void:
 	_attack_cooldown = max(0.0, _attack_cooldown - delta)
-	var enemy := _find_nearest_enemy_in_range(ATTACK_RANGE)
+	var range_limit: float = CAST_RANGE if casts_fireball else ATTACK_RANGE
+	var enemy := _find_nearest_enemy_in_range(range_limit)
 	if enemy:
 		_note_combat_activity()
 		if _attack_cooldown <= 0.0:
 			_attack_cooldown = attack_interval
-			enemy.take_damage(attack_power, self)
+			if casts_fireball:
+				_cast_fireball(enemy)
+			else:
+				enemy.take_damage(attack_power, self)
 			_play_attack_swing()
 	_update_combat_regen(delta)
+
+## Launches a homing Fireball at `enemy` instead of an instant melee hit --
+## see casts_fireball/CAST_RANGE. Damage is dealt by the fireball itself on
+## impact (see Fireball._detonate), not here, so a fast enemy can still
+## duck out of the way during the ~0.3-0.6s flight instead of taking a
+## guaranteed hit the moment the cast starts.
+func _cast_fireball(enemy: Node) -> void:
+	Effects.spawn_fireball(get_parent(), global_position + Vector3(0.0, 1.1, 0.0), enemy, attack_power, self)
 
 ## Called by Enemy._on_death when this blob landed the killing blow.
 ## Applies `amount` of XP and rolls over into as many level-ups as it now
