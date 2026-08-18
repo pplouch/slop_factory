@@ -49,7 +49,8 @@ const MASK_RESOURCES := 4
 @onready var tech_tree_panel = $TechTreePanel
 @onready var chest_panel = $ChestPanel
 @onready var village_panel = $VillagePanel
-@onready var slot_machine_panel = $SlotMachinePanel
+@onready var slot_machine_panel = get_node("SlotMachinePanel")
+@onready var pause_menu = get_node("PauseMenu")
 @onready var _sun: DirectionalLight3D = $DirectionalLight3D
 
 # Half-size used for the minimap's world<->local mapping -- deliberately
@@ -148,6 +149,7 @@ func _ready() -> void:
 	minimap.camera_move_requested.connect(_move_camera_to)
 	tech_tree_panel.opened.connect(func(): close_other_ui(tech_tree_panel))
 	hud.end_run_requested.connect(_on_end_run_requested)
+	pause_menu.return_to_menu_requested.connect(_on_return_to_menu_requested)
 
 ## One-time visual tuning pass on the scene's single Environment resource
 ## (world.tscn's own Environment_1 sub-resource ships with everything at
@@ -227,6 +229,9 @@ func _on_end_run_requested() -> void:
 	MetaProgression.earn_prestige(points)
 	get_tree().change_scene_to_file(MAIN_MENU_SCENE_PATH)
 
+func _on_return_to_menu_requested() -> void:
+	get_tree().change_scene_to_file(MAIN_MENU_SCENE_PATH)
+
 ## Godot per-frame hook: delegates to ChunkManager, which internally only
 ## re-checks chunk coverage every CHUNK_CHECK_INTERVAL, not every frame; to
 ## FogManager, which reveals fog around blobs every frame; and to
@@ -244,6 +249,9 @@ func _process(delta: float) -> void:
 ## issues an order to whatever's currently selected, and plain mouse motion
 ## (while not dragging) drives the hover highlight.
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		pause_menu.pause()
+		return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_B:
 		_building_manager.toggle_build_mode()
 		return

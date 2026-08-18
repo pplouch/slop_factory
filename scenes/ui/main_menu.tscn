@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://scripts/ui/main_menu.gd" id="1"]
 [ext_resource type="Theme" path="res://theme/game_theme.tres" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/ui/upgrades_panel.tscn" id="3"]
-[ext_resource type="PackedScene" path="res://scenes/ui/options_panel.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/ui/options_panel_v2.tscn" id="4"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
 bg_color = Color(0.1, 0.12, 0.16, 1)

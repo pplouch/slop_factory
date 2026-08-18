@@ -28,6 +28,7 @@ BlobKinds="*res://scripts/autoload/blob_kinds.gd"
 BuildingKinds="*res://scripts/autoload/building_kinds.gd"
 EnemyKinds="*res://scripts/autoload/enemy_kinds.gd"
 Biomes="*res://scripts/autoload/biomes.gd"
+Settings="*res://scripts/autoload/settings.gd"
 
 [display]
 
