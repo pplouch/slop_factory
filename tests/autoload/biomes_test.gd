@@ -296,13 +296,17 @@ func test_lava_and_oil_are_never_found_inside_plains_radius() -> void:
 		assert_bool(Biomes.is_deep_oil_at(x, z)).is_false()
 
 
-func test_is_lava_at_always_implies_is_volcanic_at() -> void:
+func test_is_lava_at_always_implies_nonzero_lava_zone_strength() -> void:
 	# Regression guard on the biome-coherence gate itself (see this file's
-	# own header): lava must never roll true somewhere the ground wouldn't
-	# already read as Volcanic, regardless of what lava_lake_noise/
-	# lava_river_noise say there. Wide scan since both is_volcanic_at's own
-	# hotspot rarity and lava's own threshold each independently narrow down
-	# how much of the scanned area can possibly qualify.
+	# own header): lava must never roll true somewhere _lava_zone_strength_at
+	# is exactly 0, regardless of what lava_lake_noise/lava_river_noise say
+	# there. Not "implies is_volcanic_at" anymore (see feature request: "lava
+	# and oil... stop as soon as the biome change... make transitions
+	# smoother") -- lava now fades in smoothly starting at the *lower* edge
+	# of VOLCANIC_BLEND_BAND, before is_volcanic_at's own hard threshold, by
+	# design. Wide scan since both the zone's own hotspot rarity and lava's
+	# own threshold each independently narrow down how much of the scanned
+	# area can possibly qualify.
 	var found_lava := false
 	var half := 1000.0
 	var step := 8.0
@@ -312,14 +316,16 @@ func test_is_lava_at_always_implies_is_volcanic_at() -> void:
 		while z <= half:
 			if Biomes.is_lava_at(x, z):
 				found_lava = true
-				assert_bool(Biomes.is_volcanic_at(x, z)).is_true()
+				assert_float(Biomes._lava_zone_strength_at(x, z)).is_greater(0.0)
 			z += step
 		x += step
 	assert_bool(found_lava).is_true()
 
 
-func test_is_oil_at_always_implies_hot_dry_climate() -> void:
-	# Same coherence guarantee as the lava test above, for oil's own gate.
+func test_is_oil_at_always_implies_nonzero_oil_zone_strength() -> void:
+	# Same coherence guarantee as the lava test above, for oil's own gate --
+	# not "implies _is_hot_dry_climate_at" anymore, for the same "fades in
+	# before the hard threshold, by design" reason.
 	var found_oil := false
 	var half := 2000.0
 	var step := 25.0
@@ -329,26 +335,35 @@ func test_is_oil_at_always_implies_hot_dry_climate() -> void:
 		while z <= half:
 			if Biomes.is_oil_at(x, z):
 				found_oil = true
-				assert_bool(Biomes._is_hot_dry_climate_at(x, z)).is_true()
+				assert_float(Biomes._oil_zone_strength_at(x, z)).is_greater(0.0)
 			z += step
 		x += step
 	assert_bool(found_oil).is_true()
 
 
-func test_is_deep_oil_at_implies_is_oil_at() -> void:
-	var found_deep := false
-	var half := 2000.0
-	var step := 25.0
-	var x := -half
-	while x <= half:
-		var z := -half
-		while z <= half:
-			if Biomes.is_deep_oil_at(x, z):
-				found_deep = true
-				assert_bool(Biomes.is_oil_at(x, z)).is_true()
-			z += step
-		x += step
-	assert_bool(found_deep).is_true()
+func test_blob_and_ridge_liquid_sample_deep_threshold_implies_shore_threshold() -> void:
+	# Direct unit test of the shared formula, not a blind search over world
+	# noise: is_deep_oil_at implying is_oil_at (and the same for lava/water)
+	# reduces to "wetness >= 1.0 implies wetness >= SHORE_WETNESS" on the
+	# exact same scaled value both booleans read, true by construction
+	# regardless of zone_w. A real "does this ever actually occur in the
+	# world" occurrence got much rarer for oil specifically after zone-
+	# scaling (see this file's own header on "smooth zone transitions") --
+	# a deep pool now also needs to sit within the climate's own fully-at-
+	# full-strength core, not just its old, looser hard-boolean territory --
+	# so checking the formula directly here avoids an unreasonably large/slow
+	# scan chasing a rare coincidence.
+	# n = 0.61, comfortably past threshold(0.5) + deep_margin(0.1) = 0.6, not
+	# exactly on it -- avoids a floating-point division landing just a hair
+	# under 1.0 (0.9999999... display-rounds to "1.000000" but still fails a
+	# strict >= 1.0 check).
+	var blob_sample: Dictionary = Biomes._blob_liquid_sample(0.61, 0.5, 0.03, 0.1, Color.WHITE, Color.BLUE, Color.BLACK, 1.0)
+	assert_float(blob_sample.wetness).is_greater_equal(1.0)
+	assert_float(blob_sample.wetness).is_greater_equal(Biomes.SHORE_WETNESS)
+
+	var ridge_sample: Dictionary = Biomes._ridge_liquid_sample(0.0, 0.035, 0.01, 0.4, Color.WHITE, Color.BLUE, Color.BLACK, 1.0)
+	assert_float(ridge_sample.wetness).is_greater_equal(1.0)
+	assert_float(ridge_sample.wetness).is_greater_equal(Biomes.SHORE_WETNESS)
 
 
 func test_is_any_liquid_at_matches_water_lava_or_oil() -> void:
@@ -389,6 +404,27 @@ func test_water_lava_and_oil_never_overlap() -> void:
 	assert_bool(checked_an_active_case).is_true()
 
 
+func test_liquid_sample_wetness_fades_smoothly_with_zone_strength() -> void:
+	# Direct test of the actual fix (see feature request: "lava and oil...
+	# stop as soon as the biome change... make transitions smoother"): with a
+	# fixed, solidly-deep noise value, wetness must decrease smoothly and
+	# monotonically as zone_w drops from full strength to zero, rather than
+	# holding at full strength then suddenly dropping to 0 the instant an
+	# unrelated independent field crosses some cutoff (the old hard-gate
+	# behavior this replaced -- the real bug reported).
+	# Integer-indexed loop (not a floating zw -= 0.05 decrement) so it lands
+	# on exactly 21 steps from 1.0 to 0.0 regardless of float accumulation
+	# error -- a decrementing float can drift just under 0.0 on the last
+	# iteration and skip the exact-zero case the final assertion needs.
+	var previous_wetness := 1000.0 # starts above any real value
+	for i in range(21):
+		var zw: float = 1.0 - float(i) * 0.05
+		var sample: Dictionary = Biomes._blob_liquid_sample(0.6, 0.5, 0.03, 0.1, Color.WHITE, Color.BLUE, Color.BLACK, zw)
+		assert_float(sample.wetness).is_less_equal(previous_wetness + 0.0001)
+		previous_wetness = sample.wetness
+	assert_float(previous_wetness).is_equal_approx(0.0, 0.0001)
+
+
 func test_hazard_sample_at_is_neutral_within_plains_radius() -> void:
 	var sample: Dictionary = Biomes.hazard_sample_at(1.0, 1.0)
 	assert_that(sample.tint).is_equal(Color.WHITE)
@@ -397,10 +433,14 @@ func test_hazard_sample_at_is_neutral_within_plains_radius() -> void:
 	assert_float(sample.glow).is_equal(0.0)
 
 
-func test_hazard_sample_at_only_glows_where_lava_is_actually_present() -> void:
-	# glow should never appear outside a volcanic hotspot (oil/dry-land
-	# samples must always report exactly 0), and scanning for lava
-	# specifically should turn up at least one genuinely glowing pixel.
+func test_hazard_sample_at_only_glows_where_lava_zone_strength_is_nonzero() -> void:
+	# glow should never appear where _lava_zone_strength_at is exactly 0
+	# (oil/dry-land samples must always report exactly 0) -- not "outside
+	# is_volcanic_at" anymore, since glow now fades in starting at the lower
+	# edge of VOLCANIC_BLEND_BAND, before is_volcanic_at's own hard threshold,
+	# the same deliberate "smooth zone transitions" change as everything else
+	# in this file's header. Scanning for lava specifically should still turn
+	# up at least one genuinely glowing pixel.
 	var found_glow := false
 	var half := 1000.0
 	var step := 8.0
@@ -409,7 +449,7 @@ func test_hazard_sample_at_only_glows_where_lava_is_actually_present() -> void:
 		var z := -half
 		while z <= half:
 			var sample: Dictionary = Biomes.hazard_sample_at(x, z)
-			if not Biomes.is_volcanic_at(x, z):
+			if Biomes._lava_zone_strength_at(x, z) <= 0.0:
 				assert_float(sample.glow).is_equal(0.0)
 			elif sample.glow > 0.0:
 				found_glow = true

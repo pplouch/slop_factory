@@ -41,27 +41,37 @@ extends Node
 ## itself doesn't repeat in sync with whatever it's warping -- no two lake
 ## shapes end up looking quite the same.
 ##
-## Lakes, lava, and oil are mutually exclusive by construction (see feature
-## request: "lakes and rivers and oil and lava SHOULD NOT overlap") rather
-## than merely unlikely to coincide: the map is partitioned into three
-## disjoint zones using the exact same conditions the biome classification
-## itself already uses (so this doubles as free biome coherence, see feature
-## request: "stay coherent with the biomes") --
-## 1. `is_volcanic_at` true -> the Lava zone. Only lava (is_lava_at, lake-
-##    style pools merged with river-style streams) can appear here; real
-##    water (is_lake_at) and oil (is_oil_at) both explicitly exclude this
-##    zone regardless of what their own noise fields say.
-## 2. Not volcanic, but `_is_hot_dry_climate_at` true (the same condition the
-##    Desert branch of biome_for_world_pos checks) -> the Oil zone. Only oil
-##    can appear here; real water excludes this zone too.
-## 3. Neither -> the Water zone. Only real water (lakes) can appear here --
-##    lava/oil's own gates above already can't be true in this zone, so no
-##    extra exclusion is needed on their end.
-## Each zone's own boolean gate lives in that liquid's is_xxx_at function
-## (is_lake_at/is_lava_at/is_oil_at/is_deep_water_at/is_deep_oil_at), so every
-## caller -- PathingManager, Chunk's scatter avoidance, hazard_sample_at,
-## water_sample_at -- sees the same partition automatically; nothing computes
-## its own separate "which zone am I in" logic.
+## Lakes, lava, and oil are gated to three zones using the exact same
+## conditions the biome classification itself already uses (so this doubles
+## as free biome coherence, see feature request: "stay coherent with the
+## biomes") -- Lava (`is_volcanic_at` true), Oil (not volcanic, but
+## `_is_hot_dry_climate_at` true, the same condition the Desert branch of
+## biome_for_world_pos checks), Water (neither). These first shipped as a
+## hard boolean partition (see feature request: "lakes and rivers and oil and
+## lava SHOULD NOT overlap"), but a hard gate on an *independent* noise field
+## clips a liquid's own shape wherever that unrelated boundary happens to
+## cross it, not at the liquid's own natural edge -- reported back as "lava
+## and oil... stop as soon as the biome change" (a real, visible hard-clip
+## bug, not just an aesthetic nitpick). Fixed by turning each zone's hard
+## boolean into a continuous 0..1 *strength* instead (_lava_zone_strength_at/
+## _oil_zone_strength_at/_water_zone_strength_at, smoothly ramping across the
+## exact same VOLCANIC_BLEND_BAND/BIOME_BLEND_BAND blended_ground_color_at
+## already uses for these same thresholds, so the ground color and the
+## liquid recede in lockstep) that scales a liquid's own wetness right where
+## _ridge_liquid_sample/_blob_liquid_sample compute it (see their own `zone_w`
+## parameter), rather than clipping the boolean classification outright.
+## Mutual exclusivity is no longer a mathematically absolute guarantee at
+## every single point (two liquids' own independent noise fields could, in
+## a narrow blend band, both coincidentally cross their threshold at reduced
+## but nonzero strength) -- a deliberate, accepted trade-off for eliminating
+## the hard-clip bug, and each zone's strength still forces the *other* two
+## toward exactly zero deep inside it (see _oil_zone_strength_at/
+## _water_zone_strength_at's own precedence-suppression), so overlap is only
+## ever possible in a narrow fringe, never in either liquid's own interior.
+## Each zone's own strength function lives centrally here, so every caller --
+## PathingManager, Chunk's scatter avoidance, hazard_sample_at,
+## water_sample_at -- sees the same fade automatically; nothing computes its
+## own separate "which zone am I in" logic.
 ##
 ## Deliberately not new Biome registry entries for lava/oil: both are
 ## localized terrain features layered onto an existing biome's territory, the
@@ -140,12 +150,12 @@ var lake_noise := FastNoiseLite.new()
 ## reused for both axes, so the warp itself isn't symmetric/diagonal.
 var warp_x_noise := FastNoiseLite.new()
 var warp_z_noise := FastNoiseLite.new()
-## Lava: lake-style pools plus river-style streams, both gated on
-## is_volcanic_at (see this file's own header on why).
+## Lava: lake-style pools plus river-style streams, both scaled by
+## _lava_zone_strength_at (see this file's own header on why).
 var lava_lake_noise := FastNoiseLite.new()
 var lava_river_noise := FastNoiseLite.new()
 ## Oil: lake-style pools only (no rivers, per the feature request's own
-## wording), gated on _is_hot_dry_climate_at (see this file's own header).
+## wording), scaled by _oil_zone_strength_at (see this file's own header).
 var oil_lake_noise := FastNoiseLite.new()
 
 const TEMPERATURE_COLD := 0.35
@@ -199,7 +209,17 @@ const LAVA_LAKE_THRESHOLD := 0.45
 const LAVA_LAKE_DEEP_MARGIN := 0.1
 const LAVA_RIVER_HALF_WIDTH := 0.02
 const LAVA_RIVER_DEEP_FRACTION := 0.5
-const LAVA_SHORE_BAND := 0.02
+## Separate shore-band widths for the lake vs. river shape (rather than one
+## shared constant) since lava_lake_noise/lava_river_noise run at different
+## frequencies and the two features are very different scales -- a shore
+## band sized for the broad lake would swamp the whole (much narrower)
+## river with diffuse fringe, and one sized for the river reads as an
+## unnaturally sharp, single-world-unit-wide edge on the lake (see feature
+## request: "lava and oil... make transitions smoother" -- this was a real,
+## separate tightness bug this pass also caught via a continuity test, not
+## just the zone-boundary clipping the rest of this section's changes fix).
+const LAVA_LAKE_SHORE_BAND := 0.1
+const LAVA_RIVER_SHORE_BAND := 0.03
 ## Charred-rock shore ring -> molten shallow -> white-hot deep core.
 const LAVA_SHORE_TINT_COLOR := Color(0.12, 0.07, 0.05)
 const LAVA_SHALLOW_TINT_COLOR := Color(0.9, 0.35, 0.05)
@@ -208,7 +228,10 @@ const LAVA_DEEP_TINT_COLOR := Color(0.65, 0.1, 0.02)
 ## -- Oil (desert-only hazard liquid, see this file's own header) --
 const OIL_LAKE_THRESHOLD := 0.5
 const OIL_LAKE_DEEP_MARGIN := 0.1
-const OIL_SHORE_BAND := 0.025
+## Widened from an original 0.025 for the same reason as LAVA_LAKE_SHORE_BAND
+## above -- too tight relative to oil_lake_noise's own frequency, reading as
+## an unnaturally sharp shore edge.
+const OIL_SHORE_BAND := 0.08
 ## Damp dark soil shore ring -> near-black slick -> deeper near-black core
 ## (oil doesn't get a dramatically different shallow/deep split the way
 ## lava's molten-to-white-hot core does -- real crude oil just reads as
@@ -388,17 +411,21 @@ func _warp(world_x: float, world_z: float) -> Vector2:
 	)
 
 ## Whether `world_x`/`world_z` falls within a lake -- a broad region where
-## the (much lower-frequency, warped) lake_noise field exceeds a threshold.
-## Excludes the Lava and Oil zones outright (see this file's own header on
-## the three-way partition) regardless of what lake_noise itself says there,
-## so real water can never overlap either hazard liquid.
+## the (much lower-frequency, warped) lake_noise field exceeds a threshold,
+## scaled down by _water_zone_strength_at (see this file's own header on
+## "smooth zone transitions") so a lake recedes gradually approaching the
+## Lava/Oil zones instead of being clipped the instant an unrelated field
+## crosses its own threshold nearby.
 func is_lake_at(world_x: float, world_z: float) -> bool:
 	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
 		return false
-	if is_volcanic_at(world_x, world_z) or _is_hot_dry_climate_at(world_x, world_z):
+	var zone_w := _water_zone_strength_at(world_x, world_z)
+	if zone_w <= 0.0:
 		return false
 	var w := _warp(world_x, world_z)
-	return lake_noise.get_noise_2d(w.x, w.y) > LAKE_THRESHOLD
+	var n := lake_noise.get_noise_2d(w.x, w.y)
+	var sample := _blob_liquid_sample(n, LAKE_THRESHOLD, LAKE_SHORE_BAND, DEEP_LAKE_MARGIN, SHORE_TINT_COLOR, SHALLOW_WATER_TINT_COLOR, DEEP_WATER_TINT_COLOR, zone_w)
+	return sample.wetness >= SHORE_WETNESS
 
 ## Whether `world_x`/`world_z` is any kind of *real water* -- lakes only (see
 ## this file's own header on why the old river feature was removed). Used by
@@ -413,77 +440,134 @@ func is_water_at(world_x: float, world_z: float) -> bool:
 	return is_lake_at(world_x, world_z)
 
 ## Whether `world_x`/`world_z` is *deep* water specifically -- a stricter
-## subset of is_water_at (see DEEP_LAKE_MARGIN above) that PathingManager
-## blocks units from entering, unlike the shallow border ring around it.
-## Always implies is_water_at is also true, since this threshold is strictly
-## tighter than the plain water one (and both exclude the same Lava/Oil
-## zones is_lake_at does, so the "deep implies shallow" guarantee holds).
+## subset of is_water_at (wetness >= 1.0 instead of >= SHORE_WETNESS) that
+## PathingManager blocks units from entering, unlike the shallow border ring
+## around it. Always implies is_water_at is also true, since 1.0 is strictly
+## tighter than SHORE_WETNESS on the exact same (zone-scaled) wetness value,
+## so the "deep implies shallow" guarantee holds regardless of zone fade.
 func is_deep_water_at(world_x: float, world_z: float) -> bool:
 	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
 		return false
-	if is_volcanic_at(world_x, world_z) or _is_hot_dry_climate_at(world_x, world_z):
+	var zone_w := _water_zone_strength_at(world_x, world_z)
+	if zone_w <= 0.0:
 		return false
 	var w := _warp(world_x, world_z)
-	return lake_noise.get_noise_2d(w.x, w.y) > LAKE_THRESHOLD + DEEP_LAKE_MARGIN
+	var n := lake_noise.get_noise_2d(w.x, w.y)
+	var sample := _blob_liquid_sample(n, LAKE_THRESHOLD, LAKE_SHORE_BAND, DEEP_LAKE_MARGIN, SHORE_TINT_COLOR, SHALLOW_WATER_TINT_COLOR, DEEP_WATER_TINT_COLOR, zone_w)
+	return sample.wetness >= 1.0
 
 ## The exact hot/dry climate condition the Desert branch of
 ## biome_for_world_pos checks (temperature past TEMPERATURE_HOT, humidity at
-## or below the jungle/desert split) -- factored out so oil's own placement
-## gate (is_oil_at) reuses precisely the same condition rather than an
-## independently-drifting approximation of it (see this file's own header on
-## why that's what makes oil "coherent with the biomes" for free).
+## or below the jungle/desert split). Oil's own placement gate is
+## _oil_zone_strength_at now (a continuous version of this same condition,
+## see this file's own header on "smooth zone transitions"), not this
+## boolean directly -- kept around as the crisp reference condition
+## _oil_zone_strength_at's own smoothstep band is centered on.
 func _is_hot_dry_climate_at(world_x: float, world_z: float) -> bool:
 	var temperature := _remap(temperature_noise.get_noise_2d(world_x, world_z))
 	var humidity := _remap(humidity_noise.get_noise_2d(world_x, world_z))
 	return temperature > TEMPERATURE_HOT and humidity <= 0.5
 
+## Continuous 0..1 "how deep into the Lava zone" `world_x`/`world_z` is,
+## replacing the hard is_volcanic_at boolean everywhere a liquid feature's
+## own wetness gets scaled by it (see this file's own header on "smooth zone
+## transitions"). Smoothly ramps across VOLCANIC_BLEND_BAND around
+## VOLCANIC_THRESHOLD -- the exact same band/threshold blended_ground_color_at
+## already uses for its own volcanic ground-color fade, so the ground color
+## and the lava liquid recede in lockstep instead of drifting out of sync
+## with each other.
+func _lava_zone_strength_at(world_x: float, world_z: float) -> float:
+	var volcanic_n := volcanic_noise.get_noise_2d(world_x, world_z)
+	return smoothstep(VOLCANIC_THRESHOLD - VOLCANIC_BLEND_BAND, VOLCANIC_THRESHOLD + VOLCANIC_BLEND_BAND, volcanic_n)
+
+## Oil's counterpart to _lava_zone_strength_at -- continuous 0..1 "how deep
+## into the Oil zone", mirroring _climate_blend_color's own hot_w/desert-side
+## weight construction (same BIOME_BLEND_BAND the ground-color blend uses for
+## these same two thresholds) instead of _is_hot_dry_climate_at's hard
+## boolean. Also folds in Lava's own precedence (see hazard_sample_at's own
+## header on why Lava wins any coincidental overlap): suppressed toward 0
+## wherever _lava_zone_strength_at is high, so Oil recedes as Lava's zone
+## strengthens instead of the two hazards ever fully overlapping.
+func _oil_zone_strength_at(world_x: float, world_z: float) -> float:
+	var temperature := _remap(temperature_noise.get_noise_2d(world_x, world_z))
+	var humidity := _remap(humidity_noise.get_noise_2d(world_x, world_z))
+	var hot_w: float = smoothstep(TEMPERATURE_HOT - BIOME_BLEND_BAND, TEMPERATURE_HOT + BIOME_BLEND_BAND, temperature)
+	var desert_w: float = 1.0 - smoothstep(0.5 - BIOME_BLEND_BAND, 0.5 + BIOME_BLEND_BAND, humidity)
+	return hot_w * desert_w * (1.0 - _lava_zone_strength_at(world_x, world_z))
+
+## Real water's counterpart -- continuous 0..1 "how far from either hazard
+## zone" `world_x`/`world_z` is, computed from the two *unsuppressed* hazard
+## strengths (not _oil_zone_strength_at's own Lava-suppressed value) since
+## water should recede from a hot/dry climate regardless of whether Lava
+## additionally out-competes Oil there too.
+func _water_zone_strength_at(world_x: float, world_z: float) -> float:
+	var temperature := _remap(temperature_noise.get_noise_2d(world_x, world_z))
+	var humidity := _remap(humidity_noise.get_noise_2d(world_x, world_z))
+	var hot_w: float = smoothstep(TEMPERATURE_HOT - BIOME_BLEND_BAND, TEMPERATURE_HOT + BIOME_BLEND_BAND, temperature)
+	var desert_w: float = 1.0 - smoothstep(0.5 - BIOME_BLEND_BAND, 0.5 + BIOME_BLEND_BAND, humidity)
+	var raw_oil_w := hot_w * desert_w
+	return (1.0 - _lava_zone_strength_at(world_x, world_z)) * (1.0 - raw_oil_w)
+
 ## Whether `world_x`/`world_z` is molten lava -- lake-style pools or river-
-## style streams, gated on is_volcanic_at (see this file's own header).
-## Always impassable at every point where this is true, no separate "deep"
-## tier the way water/oil get: real lava has no safe shallow edge to wade.
-## Guarded on PLAINS_RADIUS rather than the narrower WATER_SAFE_RADIUS,
-## since is_volcanic_at can never be true that close to the origin anyway
-## (biome_for_world_pos's own plains override), and lava should never appear
-## anywhere the ground doesn't already agree is volcanic.
+## style streams, scaled by _lava_zone_strength_at (see this file's own
+## header on "smooth zone transitions") so lava recedes gradually toward the
+## edge of its own hotspot instead of being clipped the instant is_volcanic_at
+## itself flips false somewhere in the middle of what would otherwise be a
+## bigger pool/stream. Always impassable at every point where this is true,
+## no separate "deep" tier the way water/oil get: real lava has no safe
+## shallow edge to wade. Guarded on PLAINS_RADIUS rather than the narrower
+## WATER_SAFE_RADIUS, since the Lava zone can never be strong that close to
+## the origin anyway (biome_for_world_pos's own plains override), and lava
+## should never appear anywhere the ground doesn't at least partly read as
+## volcanic.
 func is_lava_at(world_x: float, world_z: float) -> bool:
 	if Vector2(world_x, world_z).length() < PLAINS_RADIUS:
 		return false
-	if not is_volcanic_at(world_x, world_z):
+	var zone_w := _lava_zone_strength_at(world_x, world_z)
+	if zone_w <= 0.0:
 		return false
 	var w := _warp(world_x, world_z)
-	if lava_lake_noise.get_noise_2d(w.x, w.y) > LAVA_LAKE_THRESHOLD:
+	var lake_n := lava_lake_noise.get_noise_2d(w.x, w.y)
+	var lake_sample := _blob_liquid_sample(lake_n, LAVA_LAKE_THRESHOLD, LAVA_LAKE_SHORE_BAND, LAVA_LAKE_DEEP_MARGIN, LAVA_SHORE_TINT_COLOR, LAVA_SHALLOW_TINT_COLOR, LAVA_DEEP_TINT_COLOR, zone_w)
+	if lake_sample.wetness >= SHORE_WETNESS:
 		return true
-	return absf(lava_river_noise.get_noise_2d(w.x, w.y)) < LAVA_RIVER_HALF_WIDTH
+	var river_n := lava_river_noise.get_noise_2d(w.x, w.y)
+	var river_sample := _ridge_liquid_sample(river_n, LAVA_RIVER_HALF_WIDTH, LAVA_RIVER_SHORE_BAND, LAVA_RIVER_DEEP_FRACTION, LAVA_SHORE_TINT_COLOR, LAVA_SHALLOW_TINT_COLOR, LAVA_DEEP_TINT_COLOR, zone_w)
+	return river_sample.wetness >= SHORE_WETNESS
 
-## Whether `world_x`/`world_z` is an oil pool -- lake-style only, gated on
-## _is_hot_dry_climate_at (see this file's own header). Also explicitly
-## excludes the Lava zone (is_volcanic_at) even though a hot/dry desert
-## climate and a volcanic hotspot are independent fields that could
-## otherwise coincide (a hot volcanic region is a perfectly plausible climate
-## combination) -- Lava takes precedence in that case, the same precedence
-## hazard_sample_at's own if/elif ordering already gives it, so is_oil_at
-## never disagrees with what hazard_sample_at would actually render there.
-## Unlike lava, oil does get a shallow wadable border (see is_deep_oil_at)
-## the same way real water does.
+## Whether `world_x`/`world_z` is an oil pool -- lake-style only, scaled by
+## _oil_zone_strength_at (see this file's own header on "smooth zone
+## transitions") instead of _is_hot_dry_climate_at's hard boolean, so oil
+## recedes gradually toward the edge of its own climate band (and toward any
+## nearby Lava zone -- _oil_zone_strength_at already folds Lava's own
+## precedence in) rather than being clipped mid-pool. Unlike lava, oil does
+## get a shallow wadable border (see is_deep_oil_at) the same way real water
+## does.
 func is_oil_at(world_x: float, world_z: float) -> bool:
 	if Vector2(world_x, world_z).length() < PLAINS_RADIUS:
 		return false
-	if is_volcanic_at(world_x, world_z) or not _is_hot_dry_climate_at(world_x, world_z):
+	var zone_w := _oil_zone_strength_at(world_x, world_z)
+	if zone_w <= 0.0:
 		return false
 	var w := _warp(world_x, world_z)
-	return oil_lake_noise.get_noise_2d(w.x, w.y) > OIL_LAKE_THRESHOLD
+	var n := oil_lake_noise.get_noise_2d(w.x, w.y)
+	var sample := _blob_liquid_sample(n, OIL_LAKE_THRESHOLD, OIL_SHORE_BAND, OIL_LAKE_DEEP_MARGIN, OIL_SHORE_TINT_COLOR, OIL_SHALLOW_TINT_COLOR, OIL_DEEP_TINT_COLOR, zone_w)
+	return sample.wetness >= SHORE_WETNESS
 
 ## Oil's counterpart to is_deep_water_at -- PathingManager blocks units from
 ## entering this stricter subset of is_oil_at, same shallow-border-stays-
-## walkable shape as real water, and the same Lava-zone exclusion is_oil_at
+## walkable shape as real water, and the same zone-strength fade is_oil_at
 ## itself uses.
 func is_deep_oil_at(world_x: float, world_z: float) -> bool:
 	if Vector2(world_x, world_z).length() < PLAINS_RADIUS:
 		return false
-	if is_volcanic_at(world_x, world_z) or not _is_hot_dry_climate_at(world_x, world_z):
+	var zone_w := _oil_zone_strength_at(world_x, world_z)
+	if zone_w <= 0.0:
 		return false
 	var w := _warp(world_x, world_z)
-	return oil_lake_noise.get_noise_2d(w.x, w.y) > OIL_LAKE_THRESHOLD + OIL_LAKE_DEEP_MARGIN
+	var n := oil_lake_noise.get_noise_2d(w.x, w.y)
+	var sample := _blob_liquid_sample(n, OIL_LAKE_THRESHOLD, OIL_SHORE_BAND, OIL_LAKE_DEEP_MARGIN, OIL_SHORE_TINT_COLOR, OIL_SHALLOW_TINT_COLOR, OIL_DEEP_TINT_COLOR, zone_w)
+	return sample.wetness >= 1.0
 
 ## Whether `world_x`/`world_z` is occupied by *any* liquid feature -- real
 ## water, lava, or oil -- used everywhere something just needs "don't place
@@ -508,16 +592,15 @@ func water_tint_at(world_x: float, world_z: float) -> Color:
 	return sample.tint
 
 ## Real water's tint/shore/depth at `world_x`/`world_z` -- neutral (white/0/0)
-## within WATER_SAFE_RADIUS or the Lava/Oil zones (see this file's own header
-## on the three-way partition; is_lake_at's own gate is the single source of
-## truth this mirrors), otherwise a direct pass-through to _lake_water_sample
-## now that real water is lakes only (see this file's own header on why the
-## old river feature -- and the river/lake merge this function used to do --
-## were both removed).
+## within WATER_SAFE_RADIUS, otherwise a direct pass-through to
+## _lake_water_sample now that real water is lakes only (see this file's own
+## header on why the old river feature -- and the river/lake merge this
+## function used to do -- were both removed). _lake_water_sample itself
+## already fades smoothly toward neutral approaching the Lava/Oil zones (see
+## this file's own header on "smooth zone transitions"), so no separate hard
+## gate is needed here.
 func water_sample_at(world_x: float, world_z: float) -> Dictionary:
 	if Vector2(world_x, world_z).length() < WATER_SAFE_RADIUS:
-		return {"tint": Color.WHITE, "shore": 0.0, "depth": 0.0}
-	if is_volcanic_at(world_x, world_z) or _is_hot_dry_climate_at(world_x, world_z):
 		return {"tint": Color.WHITE, "shore": 0.0, "depth": 0.0}
 	return _lake_water_sample(world_x, world_z)
 
@@ -575,13 +658,17 @@ func _tint_for_wetness_colored(wetness: float, shore_color: Color, shallow_color
 ## depth, wetness saturating below 0) everywhere far from the feature, not
 ## just within half_width + shore_band, since every branch below is already
 ## a clamped smoothstep/absf ratio.
+## `zone_w` (0..1, default 1.0 = full strength) scales wetness/shore/depth
+## down uniformly before the tint is computed -- see this file's own header
+## on "smooth zone transitions" for why: without it, a liquid's own natural
+## shore-band taper has nothing to do with the *unrelated* independent noise
+## field (is_volcanic_at/_is_hot_dry_climate_at) that gates which zone it's
+## allowed in, so the feature would otherwise get hard-clipped wherever that
+## unrelated boundary happens to cross it, not at its own edge.
 func _ridge_liquid_sample(n: float, half_width: float, shore_band: float, deep_fraction: float,
-		shore_color: Color, shallow_color: Color, deep_color: Color) -> Dictionary:
+		shore_color: Color, shallow_color: Color, deep_color: Color, zone_w: float = 1.0) -> Dictionary:
 	var abs_n := absf(n)
-	var shore: float = clamp(1.0 - absf(abs_n - half_width) / shore_band, 0.0, 1.0)
-	var depth := 0.0
-	if abs_n < half_width:
-		depth = smoothstep(half_width, half_width * deep_fraction, abs_n)
+	var shore: float = clamp(1.0 - absf(abs_n - half_width) / shore_band, 0.0, 1.0) * zone_w
 
 	var wetness: float
 	if abs_n >= half_width:
@@ -597,18 +684,26 @@ func _ridge_liquid_sample(n: float, half_width: float, shore_band: float, deep_f
 		var deep_span: float = half_width - half_width * deep_fraction
 		var deep_progress: float = (half_width - abs_n) / deep_span
 		wetness = SHORE_WETNESS + deep_progress * (1.0 - SHORE_WETNESS)
+	wetness *= zone_w
 
+	# Derived from the already zone-scaled wetness (not independently scaled
+	# from abs_n) so "depth > 0" and "wetness >= SHORE_WETNESS" (what every
+	# is_xxx_at boolean checks) always agree exactly -- computing depth
+	# separately from abs_n and *then* scaling it by zone_w could leave a
+	# sliver where a scaled-down depth is still barely nonzero even though
+	# the scaled wetness has already dropped below SHORE_WETNESS, which read
+	# as a real (if minor) inconsistency between the gameplay boolean and the
+	# visual output.
+	var depth: float = smoothstep(SHORE_WETNESS, 1.0, wetness) if wetness > SHORE_WETNESS else 0.0
 	return {"tint": _tint_for_wetness_colored(wetness, shore_color, shallow_color, deep_color), "shore": shore, "depth": depth, "wetness": wetness}
 
 ## Shared "blob" threshold-feature sampler (lake-style: inside the feature
 ## wherever noise > threshold) -- lake_noise/lava_lake_noise/oil_lake_noise's
-## shared counterpart to _ridge_liquid_sample, see that function's own header.
+## shared counterpart to _ridge_liquid_sample, see that function's own header
+## (including for `zone_w`'s role).
 func _blob_liquid_sample(n: float, threshold: float, shore_band: float, deep_margin: float,
-		shore_color: Color, shallow_color: Color, deep_color: Color) -> Dictionary:
-	var shore: float = clamp(1.0 - absf(n - threshold) / shore_band, 0.0, 1.0)
-	var depth := 0.0
-	if n > threshold:
-		depth = smoothstep(threshold, threshold + deep_margin, n)
+		shore_color: Color, shallow_color: Color, deep_color: Color, zone_w: float = 1.0) -> Dictionary:
+	var shore: float = clamp(1.0 - absf(n - threshold) / shore_band, 0.0, 1.0) * zone_w
 
 	var wetness: float
 	if n <= threshold:
@@ -617,19 +712,24 @@ func _blob_liquid_sample(n: float, threshold: float, shore_band: float, deep_mar
 	else:
 		var deep_progress: float = (n - threshold) / deep_margin
 		wetness = SHORE_WETNESS + deep_progress * (1.0 - SHORE_WETNESS)
+	wetness *= zone_w
 
+	# See _ridge_liquid_sample's own header on why depth is derived from the
+	# already zone-scaled wetness rather than independently scaled from n.
+	var depth: float = smoothstep(SHORE_WETNESS, 1.0, wetness) if wetness > SHORE_WETNESS else 0.0
 	return {"tint": _tint_for_wetness_colored(wetness, shore_color, shallow_color, deep_color), "shore": shore, "depth": depth, "wetness": wetness}
 
 ## Real water's (lake) tint/shore/depth/wetness at `world_x`/`world_z` -- see
 ## water_sample_at's header for `wetness`'s role. Thin wrapper around
-## _blob_liquid_sample with lake_noise (sampled at the warped position) and
-## water's own color set. Zone-exclusivity (see this file's own header) is
-## the caller's (water_sample_at's) job, not this function's -- this is a
-## pure noise-shape sampler, same as _lava_lake_sample/_oil_lake_sample below.
+## _blob_liquid_sample with lake_noise (sampled at the warped position),
+## water's own color set, and _water_zone_strength_at's own smooth fade (see
+## this file's own header on "smooth zone transitions") approaching the
+## Lava/Oil zones.
 func _lake_water_sample(world_x: float, world_z: float) -> Dictionary:
 	var w := _warp(world_x, world_z)
 	var n := lake_noise.get_noise_2d(w.x, w.y)
-	return _blob_liquid_sample(n, LAKE_THRESHOLD, LAKE_SHORE_BAND, DEEP_LAKE_MARGIN, SHORE_TINT_COLOR, SHALLOW_WATER_TINT_COLOR, DEEP_WATER_TINT_COLOR)
+	var zone_w := _water_zone_strength_at(world_x, world_z)
+	return _blob_liquid_sample(n, LAKE_THRESHOLD, LAKE_SHORE_BAND, DEEP_LAKE_MARGIN, SHORE_TINT_COLOR, SHALLOW_WATER_TINT_COLOR, DEEP_WATER_TINT_COLOR, zone_w)
 
 ## Lava's lake-style pool sample -- same shape as _lake_water_sample, but
 ## lava_lake_noise/lava's own color set, plus a `glow` field (0..1, equal to
@@ -637,27 +737,27 @@ func _lake_water_sample(world_x: float, world_z: float) -> Dictionary:
 ## (past the deep threshold, not just the charred shore ring) should emit
 ## light (see Chunk._build_ground_material's water-wave bake and
 ## ground.gdshader's own glow channel).
-func _lava_lake_sample(world_x: float, world_z: float) -> Dictionary:
+func _lava_lake_sample(world_x: float, world_z: float, zone_w: float) -> Dictionary:
 	var w := _warp(world_x, world_z)
 	var n := lava_lake_noise.get_noise_2d(w.x, w.y)
-	var sample := _blob_liquid_sample(n, LAVA_LAKE_THRESHOLD, LAVA_SHORE_BAND, LAVA_LAKE_DEEP_MARGIN, LAVA_SHORE_TINT_COLOR, LAVA_SHALLOW_TINT_COLOR, LAVA_DEEP_TINT_COLOR)
+	var sample := _blob_liquid_sample(n, LAVA_LAKE_THRESHOLD, LAVA_LAKE_SHORE_BAND, LAVA_LAKE_DEEP_MARGIN, LAVA_SHORE_TINT_COLOR, LAVA_SHALLOW_TINT_COLOR, LAVA_DEEP_TINT_COLOR, zone_w)
 	sample["glow"] = sample.depth
 	return sample
 
 ## Lava's river-style stream sample -- see _lava_lake_sample's own header.
-func _lava_river_sample(world_x: float, world_z: float) -> Dictionary:
+func _lava_river_sample(world_x: float, world_z: float, zone_w: float) -> Dictionary:
 	var w := _warp(world_x, world_z)
 	var n := lava_river_noise.get_noise_2d(w.x, w.y)
-	var sample := _ridge_liquid_sample(n, LAVA_RIVER_HALF_WIDTH, LAVA_SHORE_BAND, LAVA_RIVER_DEEP_FRACTION, LAVA_SHORE_TINT_COLOR, LAVA_SHALLOW_TINT_COLOR, LAVA_DEEP_TINT_COLOR)
+	var sample := _ridge_liquid_sample(n, LAVA_RIVER_HALF_WIDTH, LAVA_RIVER_SHORE_BAND, LAVA_RIVER_DEEP_FRACTION, LAVA_SHORE_TINT_COLOR, LAVA_SHALLOW_TINT_COLOR, LAVA_DEEP_TINT_COLOR, zone_w)
 	sample["glow"] = sample.depth
 	return sample
 
 ## Oil's lake-style pool sample -- see _lake_water_sample's own header. No
 ## glow (oil doesn't emit light).
-func _oil_lake_sample(world_x: float, world_z: float) -> Dictionary:
+func _oil_lake_sample(world_x: float, world_z: float, zone_w: float) -> Dictionary:
 	var w := _warp(world_x, world_z)
 	var n := oil_lake_noise.get_noise_2d(w.x, w.y)
-	var sample := _blob_liquid_sample(n, OIL_LAKE_THRESHOLD, OIL_SHORE_BAND, OIL_LAKE_DEEP_MARGIN, OIL_SHORE_TINT_COLOR, OIL_SHALLOW_TINT_COLOR, OIL_DEEP_TINT_COLOR)
+	var sample := _blob_liquid_sample(n, OIL_LAKE_THRESHOLD, OIL_SHORE_BAND, OIL_LAKE_DEEP_MARGIN, OIL_SHORE_TINT_COLOR, OIL_SHALLOW_TINT_COLOR, OIL_DEEP_TINT_COLOR, zone_w)
 	sample["glow"] = 0.0
 	return sample
 
@@ -679,25 +779,29 @@ func _merge_two_liquid_samples(a: Dictionary, b: Dictionary) -> Dictionary:
 
 ## Lava/oil's own version of water_sample_at -- see this file's own header
 ## on why this is a fully separate function rather than folded into
-## water_sample_at's own merge. Neutral (white/0/0/0) outside each hazard's
-## own biome-coherence gate, so a chunk far from any volcanic hotspot or
-## hot/dry climate never even samples lava_lake_noise/lava_river_noise/
-## oil_lake_noise at all. Returns lava's own lake+river blend where
-## is_volcanic_at is true, oil's lake sample where _is_hot_dry_climate_at is
-## true instead (the two gates are independent fields and could in
-## principle both be true at the same point, but lava is checked first --
-## the rarer, more dramatic feature wins any such coincidence, matching
-## is_volcanic_at's own precedence over the climate grid in
-## biome_for_world_pos).
+## water_sample_at's own merge. Neutral (white/0/0/0) outside PLAINS_RADIUS,
+## and effectively neutral (via zero zone strength) far from any volcanic
+## hotspot or hot/dry climate, so a chunk far from either never meaningfully
+## samples lava_lake_noise/lava_river_noise/oil_lake_noise at all. Lava's own
+## lake+river sub-features are merged first, then blended against oil by the
+## same wetness-dominance rule (_oil_zone_strength_at already suppresses
+## oil's own zone strength wherever Lava's strengthens, so Lava wins any
+## coincidental overlap the same way it always has -- see that function's
+## own header).
 func hazard_sample_at(world_x: float, world_z: float) -> Dictionary:
 	var neutral := {"tint": Color.WHITE, "shore": 0.0, "depth": 0.0, "glow": 0.0}
 	if Vector2(world_x, world_z).length() < PLAINS_RADIUS:
 		return neutral
-	if is_volcanic_at(world_x, world_z):
-		return _merge_two_liquid_samples(_lava_lake_sample(world_x, world_z), _lava_river_sample(world_x, world_z))
-	if _is_hot_dry_climate_at(world_x, world_z):
-		return _oil_lake_sample(world_x, world_z)
-	return neutral
+	var lava_zone_w := _lava_zone_strength_at(world_x, world_z)
+	var oil_zone_w := _oil_zone_strength_at(world_x, world_z)
+	if lava_zone_w <= 0.0 and oil_zone_w <= 0.0:
+		return neutral
+	var lava_sample := _merge_two_liquid_samples(
+		_lava_lake_sample(world_x, world_z, lava_zone_w),
+		_lava_river_sample(world_x, world_z, lava_zone_w)
+	)
+	var oil_sample := _oil_lake_sample(world_x, world_z, oil_zone_w)
+	return _merge_two_liquid_samples(lava_sample, oil_sample)
 
 ## Whether `world_x`/`world_z` is a rare volcanic hotspot, checked before
 ## the temperature/humidity climate grid.
