@@ -281,3 +281,114 @@ func test_river_and_lake_samples_route_their_tint_through_the_shared_wetness_cur
 		assert_float(lake.tint.r).is_equal_approx(expected_lake_tint.r, 0.0001)
 		assert_float(lake.tint.g).is_equal_approx(expected_lake_tint.g, 0.0001)
 		assert_float(lake.tint.b).is_equal_approx(expected_lake_tint.b, 0.0001)
+
+
+## -- Lava/oil hazard liquids (see feature request: "add oil lakes and lava
+## lakes/rivers... stay coherent with the biomes") --
+
+func test_lava_and_oil_are_never_found_inside_plains_radius() -> void:
+	# Both hazards are guarded on PLAINS_RADIUS specifically (not the
+	# narrower WATER_SAFE_RADIUS real water uses) -- see is_lava_at/
+	# is_oil_at's own headers on why: neither should ever appear anywhere
+	# the ground doesn't independently agree is Volcanic/Desert, and
+	# biome_for_world_pos itself never picks those within PLAINS_RADIUS.
+	for i in 100:
+		var angle: float = randf_range(0.0, TAU)
+		var dist: float = randf_range(0.0, Biomes.PLAINS_RADIUS - 0.01)
+		var x: float = cos(angle) * dist
+		var z: float = sin(angle) * dist
+		assert_bool(Biomes.is_lava_at(x, z)).is_false()
+		assert_bool(Biomes.is_oil_at(x, z)).is_false()
+		assert_bool(Biomes.is_deep_oil_at(x, z)).is_false()
+
+
+func test_is_lava_at_always_implies_is_volcanic_at() -> void:
+	# Regression guard on the biome-coherence gate itself (see this file's
+	# own header): lava must never roll true somewhere the ground wouldn't
+	# already read as Volcanic, regardless of what lava_lake_noise/
+	# lava_river_noise say there. Wide scan since both is_volcanic_at's own
+	# hotspot rarity and lava's own threshold each independently narrow down
+	# how much of the scanned area can possibly qualify.
+	var found_lava := false
+	var half := 1000.0
+	var step := 8.0
+	var x := -half
+	while x <= half:
+		var z := -half
+		while z <= half:
+			if Biomes.is_lava_at(x, z):
+				found_lava = true
+				assert_bool(Biomes.is_volcanic_at(x, z)).is_true()
+			z += step
+		x += step
+	assert_bool(found_lava).is_true()
+
+
+func test_is_oil_at_always_implies_hot_dry_climate() -> void:
+	# Same coherence guarantee as the lava test above, for oil's own gate.
+	var found_oil := false
+	var half := 2000.0
+	var step := 25.0
+	var x := -half
+	while x <= half:
+		var z := -half
+		while z <= half:
+			if Biomes.is_oil_at(x, z):
+				found_oil = true
+				assert_bool(Biomes._is_hot_dry_climate_at(x, z)).is_true()
+			z += step
+		x += step
+	assert_bool(found_oil).is_true()
+
+
+func test_is_deep_oil_at_implies_is_oil_at() -> void:
+	var found_deep := false
+	var half := 2000.0
+	var step := 25.0
+	var x := -half
+	while x <= half:
+		var z := -half
+		while z <= half:
+			if Biomes.is_deep_oil_at(x, z):
+				found_deep = true
+				assert_bool(Biomes.is_oil_at(x, z)).is_true()
+			z += step
+		x += step
+	assert_bool(found_deep).is_true()
+
+
+func test_is_any_liquid_at_matches_water_lava_or_oil() -> void:
+	for i in 100:
+		var x: float = randf_range(-2000.0, 2000.0)
+		var z: float = randf_range(-2000.0, 2000.0)
+		var expected: bool = Biomes.is_water_at(x, z) or Biomes.is_lava_at(x, z) or Biomes.is_oil_at(x, z)
+		assert_bool(Biomes.is_any_liquid_at(x, z)).is_equal(expected)
+
+
+func test_hazard_sample_at_is_neutral_within_plains_radius() -> void:
+	var sample: Dictionary = Biomes.hazard_sample_at(1.0, 1.0)
+	assert_that(sample.tint).is_equal(Color.WHITE)
+	assert_float(sample.shore).is_equal(0.0)
+	assert_float(sample.depth).is_equal(0.0)
+	assert_float(sample.glow).is_equal(0.0)
+
+
+func test_hazard_sample_at_only_glows_where_lava_is_actually_present() -> void:
+	# glow should never appear outside a volcanic hotspot (oil/dry-land
+	# samples must always report exactly 0), and scanning for lava
+	# specifically should turn up at least one genuinely glowing pixel.
+	var found_glow := false
+	var half := 1000.0
+	var step := 8.0
+	var x := -half
+	while x <= half:
+		var z := -half
+		while z <= half:
+			var sample: Dictionary = Biomes.hazard_sample_at(x, z)
+			if not Biomes.is_volcanic_at(x, z):
+				assert_float(sample.glow).is_equal(0.0)
+			elif sample.glow > 0.0:
+				found_glow = true
+			z += step
+		x += step
+	assert_bool(found_glow).is_true()

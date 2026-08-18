@@ -20,13 +20,15 @@ var _grid := AStarGrid2D.new()
 
 
 ## Builds the pathing grid as one big walkable plane, except deep water
-## (see Biomes.is_deep_water_at) marked solid upfront from terrain data
-## rather than reactively like a placed structure -- units can wade the
-## shallow border around a lake/river (to gather water or build a Water
-## Extractor, itself placement-gated to shallow water for the same reason:
-## a blob has to be able to reach it to finish building it) but not the
-## deep water itself. Individual cells also go solid as blocking structures
-## are placed later (see mark_cell).
+## (see Biomes.is_deep_water_at), lava (Biomes.is_lava_at -- always fully
+## impassable, no shallow tier), and deep oil (Biomes.is_deep_oil_at) marked
+## solid upfront from terrain data rather than reactively like a placed
+## structure -- units can wade the shallow border around a lake/river/oil
+## pool (to gather water or build a Water Extractor, itself placement-gated
+## to shallow water for the same reason: a blob has to be able to reach it
+## to finish building it) but not the deep core, and never any part of a
+## lava feature at all. Individual cells also go solid as blocking
+## structures are placed later (see mark_cell).
 func setup() -> void:
 	var half := int(PATHING_GRID_HALF_SIZE / BuildingManager.GRID_CELL_SIZE)
 	_grid.region = Rect2i(-half, -half, half * 2, half * 2)
@@ -36,7 +38,9 @@ func setup() -> void:
 	for gy in range(-half, half):
 		for gx in range(-half, half):
 			var world_pos := BuildingManager.grid_to_world(Vector2i(gx, gy))
-			if Biomes.is_deep_water_at(world_pos.x, world_pos.z):
+			if Biomes.is_deep_water_at(world_pos.x, world_pos.z) \
+					or Biomes.is_lava_at(world_pos.x, world_pos.z) \
+					or Biomes.is_deep_oil_at(world_pos.x, world_pos.z):
 				_grid.set_point_solid(Vector2i(gx, gy), true)
 
 ## Marks `cell` solid/clear in the pathing grid, e.g. when a wall/building is

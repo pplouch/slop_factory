@@ -384,9 +384,19 @@ func _build_ground_material() -> ShaderMaterial:
 			var local_x: float = (float(wx) / float(WATER_MASK_SIZE - 1) - 0.5) * CHUNK_SIZE
 			var world_x := global_position.x + local_x
 			var world_z := global_position.z + local_z
+			# Lava/oil (Biomes.hazard_sample_at) are a fully separate system
+			# from real water (see that function's own header) -- wherever a
+			# hazard is actually present at this pixel, it simply overrides
+			# water's own sample outright rather than blending with it, since
+			# the two are gated to essentially disjoint regions anyway (a
+			# volcanic hotspot or hot/dry desert climate, vs. wherever
+			# river_noise/lake_noise happen to place real water).
 			var sample: Dictionary = Biomes.water_sample_at(world_x, world_z)
+			var hazard: Dictionary = Biomes.hazard_sample_at(world_x, world_z)
+			if hazard.shore > 0.001 or hazard.depth > 0.001:
+				sample = hazard
 			water_tint_img.set_pixel(wx, wy, sample.tint)
-			water_wave_img.set_pixel(wx, wy, Color(sample.shore, sample.depth, 0.0))
+			water_wave_img.set_pixel(wx, wy, Color(sample.shore, sample.depth, sample.get("glow", 0.0)))
 	var water_tint_tex := ImageTexture.create_from_image(water_tint_img)
 	var water_wave_tex := ImageTexture.create_from_image(water_wave_img)
 
@@ -427,7 +437,7 @@ func _scatter_resources() -> void:
 			# no-retry convention _maybe_spawn_chest/_maybe_spawn_village
 			# already use, so a biome bordering a lot of water just ends up
 			# with a slightly thinner cluster instead of resampling forever.
-			if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
+			if Biomes.is_any_liquid_at(global_position.x + local.x, global_position.z + local.z):
 				continue
 			var inst: Node3D = entry.scene.instantiate()
 			add_child(inst)
@@ -479,7 +489,7 @@ func _maybe_spawn_chest() -> void:
 		return
 	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
 	var local := Vector3(_rng.randf_range(-half, half), 0.0, _rng.randf_range(-half, half))
-	if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
+	if Biomes.is_any_liquid_at(global_position.x + local.x, global_position.z + local.z):
 		return
 	var inst: Node3D = CHEST_SCENE.instantiate()
 	add_child(inst)
@@ -495,7 +505,7 @@ func _maybe_spawn_chest() -> void:
 func _maybe_spawn_village() -> void:
 	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
 	var local := Vector3(_rng.randf_range(-half, half), 0.0, _rng.randf_range(-half, half))
-	if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
+	if Biomes.is_any_liquid_at(global_position.x + local.x, global_position.z + local.z):
 		return
 	var scene: PackedScene = FRIENDLY_VILLAGE_SCENE if _rng.randf() < 0.5 else ENEMY_VILLAGE_SCENE
 	var inst: Node3D = scene.instantiate()
@@ -514,7 +524,7 @@ func _maybe_spawn_village() -> void:
 func _maybe_spawn_slot_machine() -> void:
 	var half := CHUNK_SIZE * 0.5 * (1.0 - RESOURCE_SPAWN_MARGIN)
 	var local := Vector3(_rng.randf_range(-half, half), 0.0, _rng.randf_range(-half, half))
-	if Biomes.is_water_at(global_position.x + local.x, global_position.z + local.z):
+	if Biomes.is_any_liquid_at(global_position.x + local.x, global_position.z + local.z):
 		return
 	var inst: Node3D = SLOT_MACHINE_SCENE.instantiate()
 	add_child(inst)

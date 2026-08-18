@@ -533,7 +533,9 @@ func is_placement_valid(cell: Vector2i) -> bool:
 		return Biomes.is_water_at(world_pos.x, world_pos.z) and not Biomes.is_deep_water_at(world_pos.x, world_pos.z)
 	# Every other kind is a land structure -- Water Extractor above is the
 	# one deliberate exception that *requires* water instead of forbidding it.
-	if Biomes.is_water_at(world_pos.x, world_pos.z):
+	# is_any_liquid_at (not is_water_at) so a lava/oil pool rejects placement
+	# the same way real water does.
+	if Biomes.is_any_liquid_at(world_pos.x, world_pos.z):
 		return false
 	return true
 

@@ -77,7 +77,7 @@ static func _biome_def(biome_id: String) -> Dictionary:
 ## happened to land on water. `chunk_half` is the same margin-adjusted
 ## half-extent Chunk already uses for resource scattering; `world_origin`
 ## is the chunk's own global (x, z) so candidate points can be tested
-## against Biomes.is_water_at in world space.
+## against Biomes.is_any_liquid_at in world space.
 static func build_for_biome(biome_id: String, chunk_half: float, world_origin: Vector2) -> Array:
 	var def := _biome_def(biome_id)
 	var result: Array = []
@@ -120,7 +120,7 @@ static func _scatter_multimesh(mesh: ArrayMesh, count: int, chunk_half: float, w
 	var colors: Array[Color] = []
 	for i in count:
 		var local := Vector3(randf_range(-chunk_half, chunk_half), 0.0, randf_range(-chunk_half, chunk_half))
-		if Biomes.is_water_at(world_origin.x + local.x, world_origin.y + local.z):
+		if Biomes.is_any_liquid_at(world_origin.x + local.x, world_origin.y + local.z):
 			continue
 		var s := randf_range(0.75, 1.3)
 		var basis := Basis(Vector3.UP, randf() * TAU).scaled(Vector3(s, s, s))

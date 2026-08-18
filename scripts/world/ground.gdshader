@@ -45,9 +45,14 @@ void fragment() {
 	vec4 tex_sample = texture(albedo_texture, uv);
 
 	vec4 water_tint = texture(water_tint_texture, mask_uv);
-	vec2 wave_data = texture(water_wave_texture, mask_uv).rg;
+	vec3 wave_data = texture(water_wave_texture, mask_uv).rgb;
 	float shore = wave_data.r;
 	float depth = wave_data.g;
+	// Only nonzero where Biomes.hazard_sample_at baked real lava into this
+	// pixel (see Chunk._build_ground_material) -- 0 everywhere else
+	// (regular water, oil, dry land), so every use below is a no-op
+	// anywhere but an actual lava feature.
+	float lava_glow = wave_data.b;
 
 	vec3 base = tex_sample.rgb * COLOR.rgb * water_tint.rgb;
 
@@ -98,10 +103,16 @@ void fragment() {
 	float ember_pulse = sin(TIME * 3.0 + world_pos.x * 1.2 + world_pos.z * 1.3) * 0.5 + 0.5;
 	vec3 ember_color = vec3(1.0, 0.35, 0.05);
 	albedo = mix(albedo, ember_color, ember_mask * (0.4 + 0.3 * ember_pulse));
+	// Lava reuses the ground texture's own ember color/pulse (same "glowing
+	// volcanic crack" vibe, see feature request: "add lava lakes/rivers") --
+	// additively mixed toward the glow color rather than replacing albedo
+	// outright, since water_tint already carries lava's own molten-orange
+	// tint from Biomes.hazard_sample_at.
+	albedo = mix(albedo, ember_color, lava_glow * (0.5 + 0.4 * ember_pulse));
 
 	float water_sheen = max(foam, depth * 0.5);
 	ALBEDO = albedo;
 	ROUGHNESS = mix(0.95, 0.35, water_sheen);
 	SPECULAR = mix(0.3, 0.9, water_sheen);
-	EMISSION = ember_color * ember_mask * (0.5 + 1.0 * ember_pulse);
+	EMISSION = ember_color * (ember_mask * (0.5 + 1.0 * ember_pulse) + lava_glow * (0.6 + 0.6 * ember_pulse));
 }
