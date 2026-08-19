@@ -266,19 +266,19 @@ const MIN_RESOURCE_ABUNDANCE_MULT := 0.35
 
 
 func _ready() -> void:
-	temperature_noise.seed = 2000
+	temperature_noise.seed = randi()*10000
 	temperature_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	temperature_noise.frequency = 0.002
 
-	humidity_noise.seed = 3000
+	humidity_noise.seed = randi()*10000
 	humidity_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	humidity_noise.frequency = 0.00225
 
-	volcanic_noise.seed = 4000
+	volcanic_noise.seed = randi()*10000
 	volcanic_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	volcanic_noise.frequency = 0.01
 
-	lake_noise.seed = 6000
+	lake_noise.seed = randi()*10000
 	lake_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	lake_noise.frequency = 0.006
 	# Explicitly configured (rather than relying on FastNoiseLite's own
@@ -289,64 +289,64 @@ func _ready() -> void:
 	lake_noise.fractal_lacunarity = 2.0
 	lake_noise.fractal_gain = 0.45
 
-	warp_x_noise.seed = 8000
+	warp_x_noise.seed = randi()*10000
 	warp_x_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	warp_x_noise.frequency = 0.004
 	warp_x_noise.fractal_octaves = 2
 
-	warp_z_noise.seed = 9000
+	warp_z_noise.seed = randi()*10000
 	warp_z_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	# Deliberately different from warp_x_noise's own frequency so the warp
 	# isn't perfectly diagonal/symmetric between the two axes.
 	warp_z_noise.frequency = 0.0037
 	warp_z_noise.fractal_octaves = 2
 
-	lava_lake_noise.seed = 10000
+	lava_lake_noise.seed = randi()*10000
 	lava_lake_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	lava_lake_noise.frequency = 0.02
 	lava_lake_noise.fractal_octaves = 3
 
-	lava_river_noise.seed = 11000
+	lava_river_noise.seed = randi()*10000
 	lava_river_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	lava_river_noise.frequency = 0.025
 	lava_river_noise.fractal_octaves = 3
 
-	oil_lake_noise.seed = 12000
+	oil_lake_noise.seed = randi()*10000
 	oil_lake_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	oil_lake_noise.frequency = 0.018
 	oil_lake_noise.fractal_octaves = 3
 
-	difficulty_noise.seed = 7000
+	difficulty_noise.seed = randi()*10000
 	difficulty_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 	difficulty_noise.frequency = 0.0015
 
 	_register(Biome.new("plains", "Plains", Color(0.29, 0.56, 0.24),
 		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": IRON_ORE_SCENE, "resource_type": "iron"}],
-		["slime"]
+		["slime", "crow"]
 	))
 	_register(Biome.new("forest", "Forest", Color(0.16, 0.42, 0.2),
 		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": MUSHROOM_SCENE, "resource_type": "mushroom"}],
-		["wolf", "spider"]
+		["wolf", "spider", "wasp"]
 	))
 	_register(Biome.new("desert", "Desert", Color(0.76, 0.68, 0.42),
 		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": CACTUS_SCENE, "resource_type": "cactus_fiber"}, {"scene": GOLD_ORE_SCENE, "resource_type": "gold"}],
-		["scorpion", "bandit"]
+		["scorpion", "bandit", "vulture"]
 	))
 	_register(Biome.new("tundra", "Tundra", Color(0.82, 0.87, 0.92),
 		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": ICE_CRYSTAL_SCENE, "resource_type": "ice_crystal"}, {"scene": SILVER_ORE_SCENE, "resource_type": "silver"}],
-		["yeti", "wolf"]
+		["yeti", "wolf", "frost_bat"]
 	))
 	_register(Biome.new("swamp", "Swamp", Color(0.24, 0.3, 0.2),
 		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": MUSHROOM_SCENE, "resource_type": "mushroom"}, {"scene": SLOPIUM_ORE_SCENE, "resource_type": "slopium"}],
-		["leech", "spider"]
+		["leech", "spider", "mosquito"]
 	))
 	_register(Biome.new("jungle", "Jungle", Color(0.11, 0.48, 0.16),
 		[{"scene": TREE_SCENE, "resource_type": "wood"}, {"scene": MUSHROOM_SCENE, "resource_type": "mushroom"}],
-		["panther", "wolf"]
+		["panther", "wolf", "wasp"]
 	))
 	_register(Biome.new("volcanic", "Volcanic", Color(0.28, 0.14, 0.12),
 		[{"scene": ROCK_SCENE, "resource_type": "stone"}, {"scene": OBSIDIAN_SCENE, "resource_type": "obsidian"}, {"scene": PLATINUM_ORE_SCENE, "resource_type": "platinum"}],
-		["imp", "scorpion"]
+		["imp", "scorpion", "cinder_wisp"]
 	))
 
 func _register(biome: Biome) -> void:

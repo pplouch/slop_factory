@@ -1,9 +1,9 @@
 extends GdUnitTestSuite
 ## Covers EnemyKinds: Registry's contract as applied to the hostile-
 ## creature catalog, plus its own extra invariant (body_type must be one
-## of Enemy.tscn's three pre-built rigs).
+## of Enemy.tscn's four pre-built rigs).
 
-const VALID_BODY_TYPES := ["blob", "quadruped", "humanoid"]
+const VALID_BODY_TYPES := ["blob", "quadruped", "humanoid", "flying"]
 
 
 func test_slime_is_the_default_fallback_kind() -> void:

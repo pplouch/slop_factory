@@ -5,8 +5,10 @@ extends Node3D
 ## so it will be easier to debug and test new meshes") -- a flat, single
 ## ground plane (no Chunk streaming, no biomes, no fog-of-war) with a large
 ## pre-built "factory town" showcasing every building kind, several
-## conveyor-belt layouts (straight run, corner turn, two-way merge), and
-## wall layouts with and without a Gate, all already fully constructed so
+## conveyor-belt layouts (straight run, corner turn, two-way merge), wall
+## layouts with and without a Gate, and a big flock of flying enemies (see
+## feature request: "add a lot of flying enemies in the debug scene") on top
+## of the usual scattered blob crowd, all already fully constructed so
 ## nothing needs to wait on blob labor. Reuses the exact same manager split
 ## World itself does (see world.gd's own header) for Build Mode/selection/
 ## orders/the debug menu to stay fully interactive here too -- placing a new
@@ -52,6 +54,17 @@ const BLOB_SCENE: PackedScene = preload("res://scenes/units/blob/blob.tscn")
 const BLOB_KIND_CYCLE := ["worker", "worker", "scout", "hauler", "brute", "builder", "hero", "mage"]
 const BLOB_SCATTER_COUNT := 30
 const BLOB_SCATTER_HALF_SIZE := 70.0
+
+const ENEMY_SCENE: PackedScene = preload("res://scenes/units/enemy/enemy.tscn")
+## Every "flying" EnemyKinds kind (see Biomes -- normally one flying kind
+## spawns per biome; this scene has no biomes, so it just cycles all of them
+## for variety), scattered in a big flock rather than the ambient handful
+## SpawnManager ever keeps alive in a real game, since this scene's whole
+## point is "see a lot of the thing on screen at once" (see feature request:
+## "add a lot of flying enemies in the debug scene").
+const FLYING_ENEMY_KIND_CYCLE := ["crow", "wasp", "vulture", "frost_bat", "mosquito", "cinder_wisp"]
+const FLYING_ENEMY_SCATTER_COUNT := 60
+const FLYING_ENEMY_SCATTER_HALF_SIZE := 70.0
 
 
 func _ready() -> void:
@@ -152,13 +165,15 @@ func _build_ground() -> void:
 ## Builds the whole pre-populated town: one of every real building kind
 ## (see _place_buildings), several belt-line configurations (see
 ## _place_belt_configurations), wall runs with and without a Gate (see
-## _place_wall_configurations), and a scattered crowd of blobs across
-## several different kinds (see _scatter_blobs).
+## _place_wall_configurations), a scattered crowd of blobs across several
+## different kinds (see _scatter_blobs), and a big flock of flying enemies
+## (see _scatter_flying_enemies).
 func _populate_factory_town() -> void:
 	_place_buildings()
 	_place_belt_configurations()
 	_place_wall_configurations()
 	_scatter_blobs()
+	_scatter_flying_enemies()
 
 ## Instantiates, places, registers, and immediately finishes construction on
 ## `kind_id` at `cell` -- the same sequence BuildingManager.try_place_structure
@@ -291,6 +306,23 @@ func _spawn_blob(kind_id: String, pos: Vector3) -> void:
 	add_child(blob)
 	blob.global_position = pos
 	blob.play_spawn_pop()
+
+## Scatters FLYING_ENEMY_SCATTER_COUNT enemies, cycling through every
+## "flying" EnemyKinds kind, across the same area _scatter_blobs covers --
+## Enemy's own _physics_process lifts each one to FLIGHT_ALTITUDE on its
+## first tick regardless of the y given here (see Enemy._physics_process),
+## so the initial position only needs to be right on x/z.
+func _scatter_flying_enemies() -> void:
+	for i in FLYING_ENEMY_SCATTER_COUNT:
+		var kind_id: String = FLYING_ENEMY_KIND_CYCLE[i % FLYING_ENEMY_KIND_CYCLE.size()]
+		var pos := Vector3(
+			randf_range(-FLYING_ENEMY_SCATTER_HALF_SIZE, FLYING_ENEMY_SCATTER_HALF_SIZE), 0.0,
+			randf_range(-FLYING_ENEMY_SCATTER_HALF_SIZE, FLYING_ENEMY_SCATTER_HALF_SIZE)
+		)
+		var enemy: Node3D = ENEMY_SCENE.instantiate()
+		enemy.kind_id = kind_id
+		add_child(enemy)
+		enemy.global_position = pos
 
 ## Same as World.close_other_ui -- see that function's own header.
 func close_other_ui(opened: Node) -> void:

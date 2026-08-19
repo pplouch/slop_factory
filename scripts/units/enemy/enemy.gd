@@ -12,6 +12,13 @@ const DETECTION_RANGE := 9.0
 const ATTACK_RANGE := 1.3
 const WANDER_INTERVAL_RANGE := Vector2(2.0, 5.0)
 const WANDER_RADIUS := 6.0
+## Height a "flying" body_type hovers at instead of the ground clamp every
+## other rig uses (see _physics_process). Both Wall's and Gate's collision
+## boxes top out at y=1.6 (see wall.tscn/gate.tscn), so hovering here keeps a
+## flying enemy's own CollisionShape3D (0.45 radius, 0.45 above this root)
+## entirely above them -- unlike every ground kind, a flying enemy actually
+## clears a walled-off/gated base instead of being physically stopped by it.
+const FLIGHT_ALTITUDE := 2.2
 
 const BASE_MAX_HEALTH := 18.0
 const BASE_HEALTH_REGEN := 0.5
@@ -72,7 +79,15 @@ var _attack_cooldown: float = 0.0
 	$Visuals/HumanoidBody/LeftLegPivot/LeftLeg, $Visuals/HumanoidBody/RightLegPivot/RightLeg,
 ]
 
-## Which of the three pre-built rigs (see Enemy.tscn) this kind uses -- set
+@onready var _fly_body: Node3D = $Visuals/FlyingBody
+@onready var _fly_left_wing_pivot: Node3D = $Visuals/FlyingBody/LeftWingPivot
+@onready var _fly_right_wing_pivot: Node3D = $Visuals/FlyingBody/RightWingPivot
+@onready var _fly_meshes: Array = [
+	$Visuals/FlyingBody/Body, $Visuals/FlyingBody/Head,
+	$Visuals/FlyingBody/LeftWingPivot/LeftWing, $Visuals/FlyingBody/RightWingPivot/RightWing,
+]
+
+## Which of the four pre-built rigs (see Enemy.tscn) this kind uses -- set
 ## once in _apply_kind_look from EnemyKinds.Kind.body_type.
 var _body_type: String = "blob"
 ## Shared per-instance material every visible-rig mesh points at (see
@@ -90,6 +105,8 @@ const GAIT_CYCLES_PER_SECOND := 1.5
 const GAIT_AMPLITUDE := 0.55
 const ATTACK_SWING_DURATION := 0.22
 const LIMB_RESET_SPEED := 8.0
+const WING_FLAP_CYCLES_PER_SECOND := 6.0
+const WING_FLAP_AMPLITUDE := 0.5
 
 
 ## Godot lifecycle hook: sets starting stats (scaled by both the current
@@ -141,6 +158,7 @@ func _apply_kind_look(kind: EnemyKinds.Kind) -> void:
 	_blob_body.visible = _body_type == "blob"
 	_quad_body.visible = _body_type == "quadruped"
 	_hum_body.visible = _body_type == "humanoid"
+	_fly_body.visible = _body_type == "flying"
 
 	var meshes: Array = _blob_meshes_for_type()
 	_body_material = MaterialUtil.duplicated_material(meshes[0])
@@ -157,6 +175,8 @@ func _blob_meshes_for_type() -> Array:
 			return _quad_meshes
 		"humanoid":
 			return _hum_meshes
+		"flying":
+			return _fly_meshes
 		_:
 			return [_blob_mesh]
 
@@ -170,7 +190,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		_wander(delta)
 	move_and_slide()
-	global_position.y = 0.0
+	global_position.y = FLIGHT_ALTITUDE if _body_type == "flying" else 0.0
 	_update_combat_regen(delta)
 	_update_limb_animation(delta)
 
@@ -254,6 +274,8 @@ func _update_limb_animation(delta: float) -> void:
 			_update_quadruped_gait(delta, is_moving, speed)
 		"humanoid":
 			_update_humanoid_gait(delta, is_moving, speed)
+		"flying":
+			_update_flying_wingflap(delta, is_moving)
 		_:
 			_update_blob_bounce(delta, is_moving, speed)
 
@@ -284,12 +306,24 @@ func _update_blob_bounce(delta: float, is_moving: bool, speed: float) -> void:
 	else:
 		_blob_mesh.scale = _blob_mesh.scale.lerp(Vector3(1.0, 0.9, 1.0), delta * LIMB_RESET_SPEED)
 
+## Unlike every ground rig's gait, a flying rig never stops flapping to
+## "stand still" -- it has to keep flapping just to hover in place, so this
+## always runs (no is_moving gate), just faster while actually chasing/
+## wandering somewhere versus a slower idle hover-flutter.
+func _update_flying_wingflap(delta: float, is_moving: bool) -> void:
+	var rate: float = WING_FLAP_CYCLES_PER_SECOND * (1.3 if is_moving else 1.0)
+	_gait_phase += delta * TAU * rate
+	var flap: float = sin(_gait_phase) * WING_FLAP_AMPLITUDE
+	_fly_left_wing_pivot.rotation.z = flap
+	_fly_right_wing_pivot.rotation.z = -flap
+
 ## Plays a one-off attack animation matching whichever rig is active,
 ## taking over from the regular walk/bounce animation for
 ## ATTACK_SWING_DURATION so the two don't fight: a forward punch for the
 ## humanoid rig (mirrors Blob's own _play_attack_swing), a quick lunge/dip
-## for the quadruped rig (like a bite), and a sharp squash-lunge for the
-## amorphous blob rig.
+## for the quadruped rig (like a bite), a downward dive-dip for the flying
+## rig (like a bird/wasp striking from above), and a sharp squash-lunge for
+## the amorphous blob rig.
 func _play_attack_animation() -> void:
 	_attack_swing_timer = ATTACK_SWING_DURATION
 	match _body_type:
@@ -303,6 +337,15 @@ func _play_attack_animation() -> void:
 				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 		"humanoid":
 			LimbAnimator.play_punch_swing(_hum_right_arm_pivot, ATTACK_SWING_DURATION)
+		"flying":
+			# Dips the whole rig down toward the target and back -- a dive
+			# strike, distinct from the quadruped lunge/dip since it moves
+			# straight down (position) rather than pitching (rotation).
+			var tween := create_tween()
+			tween.tween_property(_fly_body, "position:y", -0.25, ATTACK_SWING_DURATION * 0.4) \
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			tween.tween_property(_fly_body, "position:y", 0.0, ATTACK_SWING_DURATION * 0.6) \
+				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 		_:
 			# No limbs on the amorphous blob rig -- a sharp squash-lunge on
 			# its one mesh instead.

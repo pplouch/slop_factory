@@ -16,10 +16,12 @@ class Kind:
 	var speed_mult: float
 	var hue: float
 	var body_scale: float
-	## Which of Enemy.tscn's three pre-built rigs this kind shows -- "blob"
+	## Which of Enemy.tscn's four pre-built rigs this kind shows -- "blob"
 	## (amorphous, no limbs, the original spiky-sphere look), "quadruped"
-	## (four-legged animal), or "humanoid" (bipedal, same rig family as
-	## Blob). Enemy hides the other two and only animates the active one.
+	## (four-legged animal), "humanoid" (bipedal, same rig family as Blob),
+	## or "flying" (winged, hovers at Enemy.FLIGHT_ALTITUDE instead of
+	## ground level -- see Enemy._physics_process). Enemy hides the other
+	## three and only animates the active one.
 	var body_type: String
 
 	func _init(p_id: String, p_name: String, p_health_mult: float, p_attack_mult: float,
@@ -45,6 +47,17 @@ func _ready() -> void:
 	_register(Kind.new("leech", "Leech", 0.55, 0.85, 1.2, 0.35, 0.75, "blob"))
 	_register(Kind.new("panther", "Panther", 0.9, 1.25, 1.6, 0.85, 0.9, "quadruped"))
 	_register(Kind.new("imp", "Imp", 0.7, 1.35, 1.3, 0.03, 0.8, "humanoid"))
+	# Flying kinds -- one per biome (see Biomes.enemy_kind_ids). Hovering at
+	# Enemy.FLIGHT_ALTITUDE keeps their collision shape above Wall/Gate's own
+	# (both top out at y=1.6), so unlike every ground kind above, these
+	# actually clear a fortified base instead of being physically stopped by
+	# it -- the whole point of adding a flying archetype.
+	_register(Kind.new("crow", "Crow", 0.45, 0.65, 1.9, 0.0, 0.6, "flying"))
+	_register(Kind.new("wasp", "Wasp", 0.4, 1.0, 2.0, 0.15, 0.45, "flying"))
+	_register(Kind.new("vulture", "Vulture", 0.75, 0.85, 1.5, 0.09, 0.9, "flying"))
+	_register(Kind.new("frost_bat", "Frost Bat", 0.5, 0.8, 1.85, 0.55, 0.55, "flying"))
+	_register(Kind.new("mosquito", "Mosquito", 0.3, 0.7, 2.1, 0.32, 0.35, "flying"))
+	_register(Kind.new("cinder_wisp", "Cinder Wisp", 0.55, 1.05, 1.7, 0.04, 0.65, "flying"))
 
 ## Thin covariant override: keeps callers' `var kind := EnemyKinds.get_kind(id)`
 ## statically typed as `Kind` (with EnemyKinds' own fields).

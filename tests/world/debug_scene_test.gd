@@ -22,6 +22,13 @@ func test_populates_a_lot_of_blobs() -> void:
 	assert_int(blobs.size()).is_greater_equal(30)
 
 
+func test_populates_a_lot_of_flying_enemies() -> void:
+	var enemies := _scene.get_tree().get_nodes_in_group("enemies")
+	var flying_kind_ids := ["crow", "wasp", "vulture", "frost_bat", "mosquito", "cinder_wisp"]
+	var flying := enemies.filter(func(e): return e.kind_id in flying_kind_ids)
+	assert_int(flying.size()).is_greater_equal(60)
+
+
 func test_places_one_of_every_real_building_kind() -> void:
 	var buildings := _scene.get_tree().get_nodes_in_group("buildings")
 	var kind_ids: Array = buildings.map(func(b): return b.kind_id if "kind_id" in b else "")
